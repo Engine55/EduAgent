@@ -6,6 +6,33 @@ from langchain.chat_models import ChatOpenAI
 from typing import List, Optional, Dict, Any
 
 
+# 拆分的模型定义
+class BasicInfoExtracted(BaseModel):
+    """基础信息提取模型"""
+    subject: Optional[str] = Field(description="学科，如数学、语文、英语、科学")
+    grade: Optional[str] = Field(description="年级，如一年级、二年级、三年级")
+    knowledge_points: Optional[List[str]] = Field(description="具体知识点列表")
+
+
+class TeachingInfoExtracted(BaseModel):
+    """教学信息提取模型"""
+    teaching_goals: Optional[List[str]] = Field(description="教学目标列表")
+    teaching_difficulties: Optional[List[str]] = Field(description="教学难点列表")
+
+
+class GameStyleExtracted(BaseModel):
+    """游戏风格信息提取模型"""
+    game_style: Optional[str] = Field(description="游戏风格，如魔法冒险、科幻探索、童话故事")
+    character_design: Optional[str] = Field(description="角色设计偏好")
+    world_setting: Optional[str] = Field(description="世界观背景设定")
+
+
+class SceneInfoExtracted(BaseModel):
+    """场景信息提取模型"""
+    scene_requirements: Optional[List[str]] = Field(description="场景需求列表")
+    interaction_requirements: Optional[List[str]] = Field(description="互动方式需求列表")
+
+
 class ExtractedInfo(BaseModel):
     """教育游戏需求信息模型"""
     subject: Optional[str] = Field(description="学科，如数学、语文、英语、科学")
@@ -36,10 +63,17 @@ class InfoExtractor:
     def __init__(self, llm: ChatOpenAI):
         """初始化信息提取器"""
         self.llm = llm
-        self.parser = PydanticOutputParser(pydantic_object=ExtractedInfo)
+        
+        # 为每个stage创建parser
+        self.parsers = {
+            "basic_info": PydanticOutputParser(pydantic_object=BasicInfoExtracted),
+            "teaching_info": PydanticOutputParser(pydantic_object=TeachingInfoExtracted),
+            "gamestyle_info": PydanticOutputParser(pydantic_object=GameStyleExtracted),
+            "scene_info": PydanticOutputParser(pydantic_object=SceneInfoExtracted)
+        }
 
-    async def extract_from_user_input(self, user_input: str) -> Dict[str, Any]:
-        """从用户输入中提取信息 - 完全依赖AI模型"""
+    async def extract_from_user_input(self, user_input: str, stage: str = "basic_info") -> Dict[str, Any]:
+        """从用户输入中提取信息 - 根据stage使用不同的parser"""
 
         try:
 

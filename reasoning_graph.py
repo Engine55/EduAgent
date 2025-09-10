@@ -53,9 +53,16 @@ class Stage1ReasoningGraph:
 
     async def process_conversation_turn(self, user_input: str) -> Dict:
         """处理一轮对话的完整流程"""
-
-        # 1. 提取信息
-        extracted_info = await self.extract_info(user_input)
+        
+        # 确定当前阶段
+        current_stage = self.determine_current_stage()
+        
+        # 只在未完成时提取信息
+        if current_stage != "complete":
+            # 1. 根据当前阶段提取信息
+            extracted_info = await self.extract_info(user_input, current_stage)
+        else:
+            extracted_info = {}
 
         # 2. 更新状态
         self.update_state(extracted_info)
@@ -83,9 +90,9 @@ class Stage1ReasoningGraph:
                 # "progress": self.get_progress_summary()
             }
 
-    async def extract_info(self, user_input: str) -> Dict:
+    async def extract_info(self, user_input: str, stage: str = "basic_info") -> Dict:
         """提取用户输入中的信息"""
-        return await self.extractor.extract_from_user_input(user_input)
+        return await self.extractor.extract_from_user_input(user_input, stage)
 
     def update_state(self, extracted_info: Dict) -> None:
         """更新收集状态"""

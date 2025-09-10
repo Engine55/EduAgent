@@ -134,23 +134,23 @@ class PromptTemplates:
         # 动态模板的基础框架
         self.dynamic_template_base = """你是专业的教育游戏设计助手。
 
-当前收集阶段：{stage_name}
-已收集信息：
-{collected_info}
-
-还需要了解：
-{missing_info}
-
-对话历史：
-{history}
-
-用户输入：{input}
-
-{stage_guidance}
-
-请根据缺失的信息重点询问，保持对话自然友好。
-
-助手回复："""
+            当前收集阶段：{stage_name}
+            已收集信息：
+            {collected_info}
+            
+            还需要了解：
+            {missing_info}
+            
+            对话历史：
+            {history}
+            
+            用户输入：{input}
+            
+            {stage_guidance}
+            
+            请根据缺失的信息重点询问，保持对话自然友好。
+            
+            助手回复："""
 
     def get_prompt_by_stage(self, stage: str) -> PromptTemplate:
         """根据阶段名称获取对应的prompt模板"""
