@@ -204,10 +204,9 @@ async def demo_conversation():
 
     # 模拟用户输入
     test_inputs = [
-        "我想为三年级学生做一个数学加法游戏",
+        "我想为三年级学生做一个数学游戏",
         "重点是10以内的加法，很多学生容易算错",
-        "希望是魔法主题的，有可爱的小精灵角色",
-        "要有森林场景，通过回答问题解锁新区域"
+        ""
     ]
 
     for i, user_input in enumerate(test_inputs, 1):

@@ -40,22 +40,53 @@ class InfoExtractor:
 
     async def extract_from_user_input(self, user_input: str) -> Dict[str, Any]:
         """从用户输入中提取信息 - 完全依赖AI模型"""
+
         try:
-            extraction_prompt = PromptTemplate(
-                template="""
-请智能提取并标准化以下用户输入中的教育游戏需求信息：
 
-用户输入：{user_input}
 
-请发挥你的理解能力：
-- 自动识别和标准化学科、年级信息（如："3年级"→"三年级"，"math"→"数学"）
-- 智能推断知识点、教学目标等信息
-- 理解游戏风格、角色设计等偏好
-- 如果某项信息不存在或不确定，请返回null
+            # 构建完整的提取提示
+            extraction_prompt = PromptTemplate(template = """
+            你是专业的信息提取器，需要严格按照规则从用户输入中提取信息。
 
-{format_instructions}
-""",
-                input_variables=["user_input"],
+            【信息提取严格规则】
+
+            核心原则：
+            1. 只提取用户明确表达的内容，绝不进行任何推断、联想或补充
+            2. 每个信息点必须能在用户原话中找到直接对应的词句
+            3. 严格禁止跨信息类别的推断（比如根据学科推断游戏风格）
+            4. 用户没有明确说明的信息类别必须标记为空值
+
+            提取标准：
+            ✅ 可以提取：用户直接说出的具体内容
+            ❌ 不能提取：需要推理、猜测、常识判断的内容
+
+            严格禁止的推断行为：
+            - 根据学科类型推断教学方式
+            - 根据年级推断角色设计
+            - 根据知识点推断游戏风格  
+            - 根据教学目标推断互动方式
+            - 根据常识或经验补充用户未说的信息
+
+            示例对比：
+            用户："我要给三年级做数学游戏，学习加法"
+            ✅ 正确：提取"三年级"、"数学"、"加法"
+            ❌ 错误：推断"卡通风格"、"可爱角色"、"数字王国"
+
+            用户："希望孩子在魔法森林学拼音，主角是小兔子"  
+            ✅ 正确：提取"拼音"、"魔法森林"、"小兔子"
+            ❌ 错误：推断"提高拼音能力"、"拼音难记"
+
+            质量验证：
+            每个提取的信息都要回答：用户是否明确说了这个内容？
+            如果答案是"需要推断"或"根据常识"，则必须标记为空值。
+
+            {format_instructions}
+
+            用户输入："{user_input}"
+
+            请严格按照规则进行提取，用户没有明确说出的信息必须标记为null。
+            """,
+                input_variables=["user_input", "strict_rules"],
                 partial_variables={"format_instructions": self.parser.get_format_instructions()}
             )
 
@@ -66,6 +97,7 @@ class InfoExtractor:
             )
 
             result = await chain.arun(user_input=user_input)
+            print(result.dict)
             return result.dict(exclude_none=True)
 
         except Exception as e:
@@ -82,5 +114,13 @@ class InfoExtractor:
 # 便利函数
 def create_info_extractor(model_name: str = "gpt-4o-mini") -> InfoExtractor:
     """创建信息提取器的便利函数"""
-    llm = ChatOpenAI(model=model_name, temperature=0.3)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    llm = ChatOpenAI(
+        model=model_name, 
+        temperature=0.3,
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
     return InfoExtractor(llm)

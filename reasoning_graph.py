@@ -1,14 +1,21 @@
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationSummaryBufferMemory  
 from langchain_openai import ChatOpenAI
-from typing import Dict, List, Optional
-import asyncio
+from typing import Dict
 
 
 class Stage1ReasoningGraph:
     def __init__(self, model_name="gpt-4o-mini", extractor=None):
         """初始化Stage1推理图"""
-        self.llm = ChatOpenAI(model=model_name, temperature=0.7)
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        self.llm = ChatOpenAI(
+            model=model_name, 
+            temperature=0.7,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
         self.extractor = extractor
 
         # 初始化Memory
@@ -54,9 +61,10 @@ class Stage1ReasoningGraph:
         self.update_state(extracted_info)
 
         # 3. 检查是否达成Stage1目标
-        if self.check_stage1_completion():
+        if self.check_stage_completion():
+            print("progress 1 completed")
             # Stage1完成
-            response = await self.generate_completion_response()
+            response = self.generate_stage_completion_response()
             return {
                 "response": response,
                 "stage": "stage1_complete",
@@ -97,7 +105,7 @@ class Stage1ReasoningGraph:
                     # 处理字符串类型的数据
                     self.collected_info[key] = value
 
-    def check_stage1_completion(self) -> bool:
+    def check_stage_completion(self) -> bool:
         """检查Stage1是否完成"""
         all_stages = ["basic_info", "teaching_info", "gamestyle_info", "scene_info"]
 
@@ -109,8 +117,23 @@ class Stage1ReasoningGraph:
                     return False
                 if isinstance(value, list) and len(value) == 0:
                     return False
+                print(f"{stage} finished")
 
         return True
+
+    def check_stage1_completion(self) -> bool:
+        """检查Stage1是否完成 - 只需要basic_info完成"""
+        # 只检查basic_info阶段
+        required_fields = self.completion_criteria["basic_info"]  # ["subject", "grade", "knowledge_points"]
+
+        for field in required_fields:
+            value = self.collected_info.get(field)
+            if not value:  # None 或空列表都算未完成
+                return False
+            if isinstance(value, list) and len(value) == 0:
+                return False
+
+        return True  # 只要basic_info的3个字段都有值就算完成
 
     def determine_current_stage(self) -> str:
         """确定当前应该收集哪个阶段的信息"""
@@ -189,6 +212,9 @@ class Stage1ReasoningGraph:
         missing = []
         details = {}
 
+        # 调试输出
+        print(f"DEBUG: collected_info = {self.collected_info}")
+        
         teaching_goals = self.collected_info.get("teaching_goals")
         if not teaching_goals or (isinstance(teaching_goals, list) and len(teaching_goals) == 0):
             missing.append("teaching_goals")
@@ -210,62 +236,62 @@ class Stage1ReasoningGraph:
             "completion_rate": completion_rate
         }
 
-    # def _check_gamestyle_info_gaps(self) -> Dict:
-    #     """检查游戏风格信息缺失"""
-    #     missing = []
-    #     details = {}
-    #
-    #     if not self.collected_info.get("game_style"):
-    #         missing.append("game_style")
-    #         details["game_style"] = "需要确定游戏风格（如：魔法冒险、科幻探索、童话故事等）"
-    #
-    #     if not self.collected_info.get("character_design"):
-    #         missing.append("character_design")
-    #         details["character_design"] = "需要设计角色形象（如：可爱的小动物、勇敢的小勇士等）"
-    #
-    #     if not self.collected_info.get("world_setting"):
-    #         missing.append("world_setting")
-    #         details["world_setting"] = "需要确定世界观背景（如：魔法王国、未来世界、童话森林等）"
-    #
-    #     total_fields = len(self.completion_criteria["gamestyle_info"])
-    #     completed_fields = total_fields - len(missing)
-    #     completion_rate = completed_fields / total_fields if total_fields > 0 else 0
-    #
-    #     return {
-    #         "stage": "gamestyle_info",
-    #         "missing_fields": missing,
-    #         "missing_details": details,
-    #         "completion_rate": completion_rate
-    #     }
+    def _check_gamestyle_info_gaps(self) -> Dict:
+        """检查游戏风格信息缺失"""
+        missing = []
+        details = {}
 
-    # def _check_scene_info_gaps(self) -> Dict:
-    #     """检查场景信息缺失"""
-    #     missing = []
-    #     details = {}
-    #
-    #     scene_requirements = self.collected_info.get("scene_requirements")
-    #     if not scene_requirements or (isinstance(scene_requirements, list) and len(scene_requirements) == 0):
-    #         missing.append("scene_requirements")
-    #         details["scene_requirements"] = "需要描述希望的场景类型（如：森林冒险、城堡解谜、太空探索等）"
-    #
-    #     interaction_requirements = self.collected_info.get("interaction_requirements")
-    #     if not interaction_requirements or (
-    #             isinstance(interaction_requirements, list) and len(interaction_requirements) == 0):
-    #         missing.append("interaction_requirements")
-    #         details["interaction_requirements"] = "需要确定互动方式（如：选择题答题、拖拽操作、语音交互等）"
-    #
-    #     total_fields = len(self.completion_criteria["scene_info"])
-    #     completed_fields = total_fields - len(missing)
-    #     completion_rate = completed_fields / total_fields if total_fields > 0 else 0
-    #
-    #     return {
-    #         "stage": "scene_info",
-    #         "missing_fields": missing,
-    #         "missing_details": details,
-    #         "completion_rate": completion_rate
-    #     }
+        if not self.collected_info.get("game_style"):
+            missing.append("game_style")
+            details["game_style"] = "需要确定游戏风格（如：魔法冒险、科幻探索、童话故事等）"
 
-    async def generate_completion_response(self) -> str:
+        if not self.collected_info.get("character_design"):
+            missing.append("character_design")
+            details["character_design"] = "需要设计角色形象（如：可爱的小动物、勇敢的小勇士等）"
+
+        if not self.collected_info.get("world_setting"):
+            missing.append("world_setting")
+            details["world_setting"] = "需要确定世界观背景（如：魔法王国、未来世界、童话森林等）"
+
+        total_fields = len(self.completion_criteria["gamestyle_info"])
+        completed_fields = total_fields - len(missing)
+        completion_rate = completed_fields / total_fields if total_fields > 0 else 0
+
+        return {
+            "stage": "gamestyle_info",
+            "missing_fields": missing,
+            "missing_details": details,
+            "completion_rate": completion_rate
+        }
+
+    def _check_scene_info_gaps(self) -> Dict:
+        """检查场景信息缺失"""
+        missing = []
+        details = {}
+
+        scene_requirements = self.collected_info.get("scene_requirements")
+        if not scene_requirements or (isinstance(scene_requirements, list) and len(scene_requirements) == 0):
+            missing.append("scene_requirements")
+            details["scene_requirements"] = "需要描述希望的场景类型（如：森林冒险、城堡解谜、太空探索等）"
+
+        interaction_requirements = self.collected_info.get("interaction_requirements")
+        if not interaction_requirements or (
+                isinstance(interaction_requirements, list) and len(interaction_requirements) == 0):
+            missing.append("interaction_requirements")
+            details["interaction_requirements"] = "需要确定互动方式（如：选择题答题、拖拽操作、语音交互等）"
+
+        total_fields = len(self.completion_criteria["scene_info"])
+        completed_fields = total_fields - len(missing)
+        completion_rate = completed_fields / total_fields if total_fields > 0 else 0
+
+        return {
+            "stage": "scene_info",
+            "missing_fields": missing,
+            "missing_details": details,
+            "completion_rate": completion_rate
+        }
+
+    def generate_stage_completion_response(self) -> str:
         """生成Stage1完成的确认回复"""
         requirements_summary = self._format_final_requirements()
 
@@ -286,6 +312,42 @@ class Stage1ReasoningGraph:
 请回复"确认无误"开始生成，或指出需要修改的内容。"""
 
         return completion_response
+    def generate_stage1_completion_response(self) -> str:
+        """生成Stage1完成的专门回复 - 只针对basic_info完成"""
+
+        # 打印基础信息到控制台
+        print("\n" + "=" * 50)
+        print("🎯 Stage1 基础信息收集完成！")
+        print("=" * 50)
+        print(f"📚 学科: {self.collected_info['subject']}")
+        print(f"🎓 年级: {self.collected_info['grade']}")
+        if isinstance(self.collected_info['knowledge_points'], list):
+            knowledge_str = "、".join(self.collected_info['knowledge_points'])
+        else:
+            knowledge_str = str(self.collected_info['knowledge_points'])
+        print(f"📖 知识点: {knowledge_str}")
+        print("=" * 50)
+        print()
+
+        # 生成用户回复
+        response = f"""太好了！基础信息已经收集完成。
+
+    📋 收集到的信息：
+    - 学科：{self.collected_info['subject']}
+    - 年级：{self.collected_info['grade']}
+    - 知识点：{knowledge_str}
+
+    基于这些基础信息，我现在可以开始设计您的教育游戏了！
+
+    接下来我将：
+    1. 根据学科特点设计合适的游戏世界
+    2. 将知识点巧妙融入游戏情节
+    3. 创建适合目标年龄段的角色和故事
+
+    请确认以上信息是否正确？如果需要修改，请告诉我。
+    如果确认无误，我将开始生成游戏设计方案。"""
+
+        return response
 
     async def generate_response_with_lacked_info(self, lacked_info: Dict) -> str:
         """基于缺失信息生成回复"""
@@ -349,80 +411,80 @@ class Stage1ReasoningGraph:
     #
     #     return progress
 
-    # def get_final_requirements(self) -> Dict:
-    #     """获取最终需求文档"""
-    #     return {
-    #         "basic_info": {
-    #             "subject": self.collected_info["subject"],
-    #             "grade": self.collected_info["grade"],
-    #             "knowledge_points": self.collected_info["knowledge_points"]
-    #         },
-    #         "teaching_info": {
-    #             "teaching_goals": self.collected_info["teaching_goals"],
-    #             "teaching_difficulties": self.collected_info["teaching_difficulties"]
-    #         },
-    #         "gamestyle_info": {
-    #             "game_style": self.collected_info["game_style"],
-    #             "character_design": self.collected_info["character_design"],
-    #             "world_setting": self.collected_info["world_setting"]
-    #         },
-    #         "scene_info": {
-    #             "scene_requirements": self.collected_info["scene_requirements"],
-    #             "interaction_requirements": self.collected_info["interaction_requirements"]
-    #         },
-    #         "metadata": {
-    #             "completion_date": self._get_current_timestamp(),
-    #             "total_fields_collected": sum(1 for v in self.collected_info.values() if v)
-    #         }
-    #     }
+    def get_final_requirements(self) -> Dict:
+        """获取最终需求文档"""
+        return {
+            "basic_info": {
+                "subject": self.collected_info["subject"],
+                "grade": self.collected_info["grade"],
+                "knowledge_points": self.collected_info["knowledge_points"]
+            },
+            "teaching_info": {
+                "teaching_goals": self.collected_info["teaching_goals"],
+                "teaching_difficulties": self.collected_info["teaching_difficulties"]
+            },
+            "gamestyle_info": {
+                "game_style": self.collected_info["game_style"],
+                "character_design": self.collected_info["character_design"],
+                "world_setting": self.collected_info["world_setting"]
+            },
+            "scene_info": {
+                "scene_requirements": self.collected_info["scene_requirements"],
+                "interaction_requirements": self.collected_info["interaction_requirements"]
+            },
+            "metadata": {
+                "completion_date": self._get_current_timestamp(),
+                "total_fields_collected": sum(1 for v in self.collected_info.values() if v)
+            }
+        }
 
-    # def _format_final_requirements(self) -> str:
-    #     """格式化最终需求为易读文本"""
-    #     sections = []
-    #
-    #     # 基础信息
-    #     sections.append("📚 基础信息：")
-    #     sections.append(f"  学科：{self.collected_info['subject']}")
-    #     sections.append(f"  年级：{self.collected_info['grade']}")
-    #     if self.collected_info['knowledge_points']:
-    #         points = "、".join(self.collected_info['knowledge_points'])
-    #         sections.append(f"  知识点：{points}")
-    #
-    #     # 教学信息
-    #     sections.append("\n🎯 教学信息：")
-    #     if self.collected_info['teaching_goals']:
-    #         goals = "、".join(self.collected_info['teaching_goals'])
-    #         sections.append(f"  教学目标：{goals}")
-    #     if self.collected_info['teaching_difficulties']:
-    #         difficulties = "、".join(self.collected_info['teaching_difficulties'])
-    #         sections.append(f"  教学难点：{difficulties}")
-    #
-    #     # 游戏设定
-    #     sections.append("\n🎮 游戏设定：")
-    #     sections.append(f"  游戏风格：{self.collected_info['game_style']}")
-    #     sections.append(f"  角色设计：{self.collected_info['character_design']}")
-    #     sections.append(f"  世界背景：{self.collected_info['world_setting']}")
-    #
-    #     # 场景需求
-    #     sections.append("\n🏞️ 场景需求：")
-    #     if self.collected_info['scene_requirements']:
-    #         scenes = "、".join(self.collected_info['scene_requirements'])
-    #         sections.append(f"  场景类型：{scenes}")
-    #     if self.collected_info['interaction_requirements']:
-    #         interactions = "、".join(self.collected_info['interaction_requirements'])
-    #         sections.append(f"  互动方式：{interactions}")
-    #
-    #     return "\n".join(sections)
-    #
-    # def _get_current_timestamp(self) -> str:
-    #     """获取当前时间戳"""
-    #     from datetime import datetime
-    #     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    #
-    # def reset_conversation(self) -> None:
-    #     """重置对话状态"""
-    #     self.collected_info = {key: None for key in self.collected_info.keys()}
-    #     self.memory.clear()
+    def _format_final_requirements(self) -> str:
+        """格式化最终需求为易读文本"""
+        sections = []
+
+        # 基础信息
+        sections.append("📚 基础信息：")
+        sections.append(f"  学科：{self.collected_info['subject']}")
+        sections.append(f"  年级：{self.collected_info['grade']}")
+        if self.collected_info['knowledge_points']:
+            points = "、".join(self.collected_info['knowledge_points'])
+            sections.append(f"  知识点：{points}")
+
+        # 教学信息
+        sections.append("\n🎯 教学信息：")
+        if self.collected_info['teaching_goals']:
+            goals = "、".join(self.collected_info['teaching_goals'])
+            sections.append(f"  教学目标：{goals}")
+        if self.collected_info['teaching_difficulties']:
+            difficulties = "、".join(self.collected_info['teaching_difficulties'])
+            sections.append(f"  教学难点：{difficulties}")
+
+        # 游戏设定
+        sections.append("\n🎮 游戏设定：")
+        sections.append(f"  游戏风格：{self.collected_info['game_style']}")
+        sections.append(f"  角色设计：{self.collected_info['character_design']}")
+        sections.append(f"  世界背景：{self.collected_info['world_setting']}")
+
+        # 场景需求
+        sections.append("\n🏞️ 场景需求：")
+        if self.collected_info['scene_requirements']:
+            scenes = "、".join(self.collected_info['scene_requirements'])
+            sections.append(f"  场景类型：{scenes}")
+        if self.collected_info['interaction_requirements']:
+            interactions = "、".join(self.collected_info['interaction_requirements'])
+            sections.append(f"  互动方式：{interactions}")
+
+        return "\n".join(sections)
+
+    def _get_current_timestamp(self) -> str:
+        """获取当前时间戳"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def reset_conversation(self) -> None:
+        """重置对话状态"""
+        self.collected_info = {key: None for key in self.collected_info.keys()}
+        self.memory.clear()
 
 
 # 辅助函数
