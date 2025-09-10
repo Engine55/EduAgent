@@ -1,0 +1,14 @@
+# Core LangChain dependencies
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-community>=0.0.20
+
+# OpenAI API
+openai>=1.0.0
+
+# Memory and conversation management
+tiktoken>=0.5.0
+
+# Additional utilities
+pydantic>=2.0.0
+typing-extensions>=4.0.0
