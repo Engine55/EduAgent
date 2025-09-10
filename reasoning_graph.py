@@ -1,20 +1,20 @@
 from langchain.chains import ConversationChain
-from langchain.memory import ConversationSummaryBufferMemory
-from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationSummaryBufferMemory  
+from langchain_openai import ChatOpenAI
 from typing import Dict, List, Optional
 import asyncio
 
 
 class Stage1ReasoningGraph:
-    def __init__(self, llm, extractor):
+    def __init__(self, model_name="gpt-4o-mini", extractor=None):
         """初始化Stage1推理图"""
-        self.llm = llm
+        self.llm = ChatOpenAI(model=model_name, temperature=0.7)
         self.extractor = extractor
 
         # 初始化Memory
         self.memory = ConversationSummaryBufferMemory(
             max_token_limit=8000,
-            llm=llm,
+            llm=self.llm,
             return_messages=True
         )
 
@@ -265,27 +265,27 @@ class Stage1ReasoningGraph:
     #         "completion_rate": completion_rate
     #     }
 
-#     async def generate_completion_response(self) -> str:
-#         """生成Stage1完成的确认回复"""
-#         requirements_summary = self._format_final_requirements()
-#
-#         completion_response = f"""🎉 太棒了！教育游戏需求收集已经完成！
-#
-# 让我为您总结一下收集到的完整信息：
-#
-# {requirements_summary}
-#
-# 请确认以上信息是否准确？如果需要修改任何内容，请告诉我具体要调整的地方。
-#
-# 如果信息无误，我将开始为您生成完整的游戏设计方案，包括：
-# - 详细的游戏剧本和故事线
-# - 每个场景的具体设计
-# - 角色对话和互动内容
-# - 教育目标的融入方式
-#
-# 请回复"确认无误"开始生成，或指出需要修改的内容。"""
-#
-#         return completion_response
+    async def generate_completion_response(self) -> str:
+        """生成Stage1完成的确认回复"""
+        requirements_summary = self._format_final_requirements()
+
+        completion_response = f"""🎉 太棒了！教育游戏需求收集已经完成！
+
+让我为您总结一下收集到的完整信息：
+
+{requirements_summary}
+
+请确认以上信息是否准确？如果需要修改任何内容，请告诉我具体要调整的地方。
+
+如果信息无误，我将开始为您生成完整的游戏设计方案，包括：
+- 详细的游戏剧本和故事线
+- 每个场景的具体设计
+- 角色对话和互动内容
+- 教育目标的融入方式
+
+请回复"确认无误"开始生成，或指出需要修改的内容。"""
+
+        return completion_response
 
     async def generate_response_with_lacked_info(self, lacked_info: Dict) -> str:
         """基于缺失信息生成回复"""
@@ -428,7 +428,7 @@ class Stage1ReasoningGraph:
 # 辅助函数
 def create_stage1_reasoning_graph(model_name: str = "gpt-4o-mini"):
     """创建Stage1推理图实例的便利函数"""
-    from langchain.chat_models import ChatOpenAI
+    from langchain_openai import ChatOpenAI
     from info_extractor import InfoExtractor
 
     llm = ChatOpenAI(model=model_name, temperature=0.7)

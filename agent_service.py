@@ -1,4 +1,3 @@
-from langchain.chat_models import ChatOpenAI
 from typing import Dict, Any, Optional
 import asyncio
 from datetime import datetime
@@ -10,7 +9,7 @@ from info_extractor import create_info_extractor
 class AgentService:
     def __init__(self, model_name: str = "gpt-4o-mini"):
         """初始化Agent服务 - 单用户版本"""
-        self.llm = ChatOpenAI(model=model_name, temperature=0.7)
+        self.model_name = model_name
 
         # 单一会话实例
         self.reasoning_graph: Optional[Stage1ReasoningGraph] = None
@@ -23,7 +22,7 @@ class AgentService:
     def start_conversation(self) -> Dict[str, Any]:
         """开始对话会话"""
         # 创建新的Stage1推理图实例
-        self.reasoning_graph = Stage1ReasoningGraph(self.llm, self.extractor)
+        self.reasoning_graph = Stage1ReasoningGraph(self.model_name, self.extractor)
 
         welcome_message = """🎮 您好！我是教育游戏设计助手！
 
@@ -173,7 +172,7 @@ class AgentService:
     def reset_session(self) -> Dict[str, Any]:
         """重置会话"""
         # 重新创建推理图实例
-        self.reasoning_graph = Stage1ReasoningGraph(self.llm, self.extractor)
+        self.reasoning_graph = Stage1ReasoningGraph(self.model_name, self.extractor)
 
         return {
             "status": "session_reset",
