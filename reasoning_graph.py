@@ -2,10 +2,14 @@ from langchain.chains import ConversationChain
 from langchain.memory import ConversationSummaryBufferMemory  
 from langchain_openai import ChatOpenAI
 from typing import Dict
+import json
+import hashlib
+from datetime import datetime
+from upstash_redis import Redis
 
 
 class Stage1ReasoningGraph:
-    def __init__(self, model_name="gpt-4o-mini", extractor=None):
+    def __init__(self, model_name="gpt-4o-mini", extractor=None, user_id="1"):
         """初始化Stage1推理图"""
         import os
         from dotenv import load_dotenv
@@ -17,6 +21,7 @@ class Stage1ReasoningGraph:
             openai_api_key=os.getenv("OPENAI_API_KEY")
         )
         self.extractor = extractor
+        self.user_id = str(user_id)  # 确保是字符串格式
 
         # 初始化Memory
         self.memory = ConversationSummaryBufferMemory(
@@ -50,6 +55,17 @@ class Stage1ReasoningGraph:
         # 导入prompt模板
         from prompt_templates import PromptTemplates
         self.prompts = PromptTemplates()
+        
+        # 初始化Redis连接
+        try:
+            self.redis = Redis(
+                url=os.getenv("UPSTASH_REDIS_URL"),
+                token=os.getenv("UPSTASH_REDIS_TOKEN")
+            )
+            print("✅ Redis连接成功")
+        except Exception as e:
+            print(f"❌ Redis连接失败: {e}")
+            self.redis = None
 
     async def process_conversation_turn(self, user_input: str) -> Dict:
         """处理一轮对话的完整流程"""
@@ -96,7 +112,9 @@ class Stage1ReasoningGraph:
 
     def update_state(self, extracted_info: Dict) -> None:
         """更新收集状态"""
+        print(f"DEBUG update_state: received = {extracted_info}")
         for key, value in extracted_info.items():
+            print(f"DEBUG: processing key={key}, value={value}")
             if value and key in self.collected_info:
                 if isinstance(value, list):
                     # 处理列表类型的数据
@@ -111,6 +129,12 @@ class Stage1ReasoningGraph:
                 else:
                     # 处理字符串类型的数据
                     self.collected_info[key] = value
+                print(f"DEBUG: updated {key} -> {self.collected_info[key]}")
+            else:
+                print(f"DEBUG: skipped {key} (empty value or key not found)")
+        
+        print(f"DEBUG: final collected_info = {self.collected_info}")
+        print("="*50)
 
     def check_stage_completion(self) -> bool:
         """检查Stage1是否完成"""
@@ -364,7 +388,7 @@ class Stage1ReasoningGraph:
             self.collected_info,
             lacked_info
         )
-
+        print(f"dynmiac prompt is : {dynamic_prompt}")
         # 创建对话链
         conversation = ConversationChain(
             llm=self.llm,
@@ -376,7 +400,7 @@ class Stage1ReasoningGraph:
         missing_fields_str = "、".join(
             [lacked_info["missing_details"][field] for field in lacked_info["missing_fields"]])
         context_input = f"继续对话，重点了解：{missing_fields_str}"
-
+        print(f"context input is {context_input}")
         response = await conversation.apredict(input=context_input)
         return response
     #
@@ -446,7 +470,11 @@ class Stage1ReasoningGraph:
         }
 
     def _format_final_requirements(self) -> str:
-        """格式化最终需求为易读文本"""
+        """格式化最终需求为易读文本并保存到Redis"""
+        
+        # 保存到Redis
+        self._save_requirements_to_redis()
+        
         sections = []
 
         # 基础信息
@@ -482,6 +510,51 @@ class Stage1ReasoningGraph:
             sections.append(f"  互动方式：{interactions}")
 
         return "\n".join(sections)
+    
+    def _save_requirements_to_redis(self):
+        """将最终需求保存到Upstash Redis"""
+        if not self.redis:
+            print("⚠️ Redis未连接，跳过保存")
+            return
+            
+        try:
+            # 生成唯一ID
+            timestamp = datetime.now().isoformat()
+            content_hash = hashlib.md5(json.dumps(self.collected_info, sort_keys=True).encode()).hexdigest()[:8]
+            requirement_id = f"requirement_{timestamp}_{content_hash}"
+            
+            # 准备保存的数据
+            requirement_data = {
+                "id": requirement_id,
+                "user_id": "1",  # 添加用户ID
+                "timestamp": timestamp,
+                "collected_info": self.collected_info,
+                "summary": {
+                    "subject": self.collected_info.get("subject"),
+                    "grade": self.collected_info.get("grade"),
+                    "knowledge_points_count": len(self.collected_info.get("knowledge_points", [])),
+                    "completion_status": "completed"
+                },
+                "metadata": {
+                    "total_fields_collected": sum(1 for v in self.collected_info.values() if v),
+                    "stages_completed": ["basic_info", "teaching_info", "gamestyle_info", "scene_info"]
+                }
+            }
+            
+            # 保存到Redis
+            key = f"eduagent:requirements:{requirement_id}"
+            self.redis.set(key, json.dumps(requirement_data, ensure_ascii=False))
+            self.redis.expire(key, 2592000)  # 30天过期
+            
+            # 添加到索引（按日期）
+            date_key = f"eduagent:requirements:index:{datetime.now().strftime('%Y-%m-%d')}"
+            self.redis.sadd(date_key, requirement_id)
+            self.redis.expire(date_key, 2592000)  # 30天过期
+            
+            print(f"✅ 需求数据已保存到Redis: {requirement_id}")
+            
+        except Exception as e:
+            print(f"❌ 保存到Redis失败: {e}")
 
     def _get_current_timestamp(self) -> str:
         """获取当前时间戳"""

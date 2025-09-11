@@ -8,3 +8,10 @@ typing-extensions>=4.0.0
 
 # Environment variables
 python-dotenv
+
+# Database
+upstash-redis
+
+# Web scraping
+requests
+beautifulsoup4

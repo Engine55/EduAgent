@@ -173,7 +173,7 @@ class PromptTemplates:
 
         # 格式化缺失信息
         missing_summary = self._format_missing_info(lacked_info)
-
+        print(f"missing summary is {missing_summary}")
         # 生成阶段指导语
         stage_guidance = self._generate_stage_guidance(stage, lacked_info)
 
@@ -281,15 +281,34 @@ class PromptTemplates:
         else:
             base_encouragement = "信息收集完成，让我们进入下一阶段。"
 
-        # 阶段特定指导
-        stage_specific_guidance = {
-            "basic_info": "请重点了解学科、年级和具体知识点，这些是游戏设计的基础。",
-            "teaching_info": "请深入挖掘教学目标和学生的学习困难，这决定了游戏的教育价值。",
-            "gamestyle_info": "请了解用户的喜好，打造有吸引力的游戏世界。",
-            "scene_info": "请确定具体的场景和互动设计，让教育目标通过游戏玩法实现。"
+        # 根据具体缺失字段生成精确指导
+        missing_fields = lacked_info.get("missing_fields", [])
+        
+        field_guidance = {
+            # basic_info字段
+            "subject": "请明确学科领域",
+            "grade": "请确认目标年级", 
+            "knowledge_points": "请详细说明要学习的知识点",
+            
+            # teaching_info字段
+            "teaching_goals": "请说明希望学生通过游戏达到的学习目标",
+            "teaching_difficulties": "请告诉我学生在这个知识点上的常见困难",
+            
+            # gamestyle_info字段  
+            "game_style": "请描述您偏好的游戏风格",
+            "character_design": "请说明希望的角色设计",
+            "world_setting": "请描述游戏的世界背景设定",
+            
+            # scene_info字段
+            "scene_requirements": "请描述希望的游戏场景",
+            "interaction_requirements": "请说明偏好的互动方式"
         }
-
-        specific_guidance = stage_specific_guidance.get(stage, "")
+        
+        if missing_fields:
+            specific_guidances = [field_guidance.get(field, f"请提供{field}信息") for field in missing_fields]
+            specific_guidance = "重点关注：" + "、".join(specific_guidances) + "。"
+        else:
+            specific_guidance = ""
 
         return f"{base_encouragement} {specific_guidance}".strip()
 
