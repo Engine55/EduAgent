@@ -86,13 +86,23 @@ class Stage1ReasoningGraph:
         # 3. 检查是否达成Stage1目标
         if self.check_stage_completion():
             print("progress 1 completed")
+            
+            # Stage1完成，保存需求信息
+            save_result = self.save_final_requirements()
+            if save_result["success"]:
+                print(f"✅ 需求信息已保存: {save_result['requirement_id']}")
+            else:
+                print(f"❌ 保存失败: {save_result['message']}")
+            
             # Stage1完成
             response = self.generate_stage_completion_response()
             return {
                 "response": response,
                 "stage": "stage1_complete",
                 "next_action": "proceed_to_stage2",
-                "requirements": self.get_final_requirements()
+                "requirements": self.get_final_requirements(),
+                "save_result": save_result,
+                "requirement_id": save_result.get("requirement_id", None)
             }
         else:
             # Stage1未完成，继续收集
@@ -152,19 +162,6 @@ class Stage1ReasoningGraph:
 
         return True
 
-    def check_stage1_completion(self) -> bool:
-        """检查Stage1是否完成 - 只需要basic_info完成"""
-        # 只检查basic_info阶段
-        required_fields = self.completion_criteria["basic_info"]  # ["subject", "grade", "knowledge_points"]
-
-        for field in required_fields:
-            value = self.collected_info.get(field)
-            if not value:  # None 或空列表都算未完成
-                return False
-            if isinstance(value, list) and len(value) == 0:
-                return False
-
-        return True  # 只要basic_info的3个字段都有值就算完成
 
     def determine_current_stage(self) -> str:
         """确定当前应该收集哪个阶段的信息"""
@@ -343,42 +340,7 @@ class Stage1ReasoningGraph:
 请回复"确认无误"开始生成，或指出需要修改的内容。"""
 
         return completion_response
-    def generate_stage1_completion_response(self) -> str:
-        """生成Stage1完成的专门回复 - 只针对basic_info完成"""
 
-        # 打印基础信息到控制台
-        print("\n" + "=" * 50)
-        print("🎯 Stage1 基础信息收集完成！")
-        print("=" * 50)
-        print(f"📚 学科: {self.collected_info['subject']}")
-        print(f"🎓 年级: {self.collected_info['grade']}")
-        if isinstance(self.collected_info['knowledge_points'], list):
-            knowledge_str = "、".join(self.collected_info['knowledge_points'])
-        else:
-            knowledge_str = str(self.collected_info['knowledge_points'])
-        print(f"📖 知识点: {knowledge_str}")
-        print("=" * 50)
-        print()
-
-        # 生成用户回复
-        response = f"""太好了！基础信息已经收集完成。
-
-    📋 收集到的信息：
-    - 学科：{self.collected_info['subject']}
-    - 年级：{self.collected_info['grade']}
-    - 知识点：{knowledge_str}
-
-    基于这些基础信息，我现在可以开始设计您的教育游戏了！
-
-    接下来我将：
-    1. 根据学科特点设计合适的游戏世界
-    2. 将知识点巧妙融入游戏情节
-    3. 创建适合目标年龄段的角色和故事
-
-    请确认以上信息是否正确？如果需要修改，请告诉我。
-    如果确认无误，我将开始生成游戏设计方案。"""
-
-        return response
 
     async def generate_response_with_lacked_info(self, lacked_info: Dict) -> str:
         """基于缺失信息生成回复"""

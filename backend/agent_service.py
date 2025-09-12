@@ -57,10 +57,13 @@ class AgentService:
             # 核心处理：调用推理图处理对话轮次
             result = await self.reasoning_graph.process_conversation_turn(user_input)
 
+            # 添加metadata字段
+            result["ready_for_stage2"] = (result["next_action"] == "proceed_to_stage2")
+
             # 根据推理图的结果决定下一步动作
             if result["next_action"] == "proceed_to_stage2":
-                # Stage1完成，进入Stage2
-                return await self._transition_to_stage2(result)
+                # Stage1完成，但仍使用collection格式返回
+                return self._format_collection_response(result)
 
             elif result["next_action"] == "continue_collection":
                 # Stage1未完成，继续收集信息
@@ -100,15 +103,31 @@ class AgentService:
 
     def _format_collection_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """格式化Stage1信息收集中的响应"""
-        return {
+        response_data = {
             "response": result["response"],
-            "stage": "stage1_collecting",
-            "current_stage": result["lacked_info"]["stage"],
-            "missing_fields": result["lacked_info"]["missing_fields"],
-            "completion_rate": result["lacked_info"]["completion_rate"],
+            "ready_for_stage2": result.get("ready_for_stage2", False),
             "timestamp": self._get_timestamp(),
-            "action": "continue_conversation"
         }
+        
+        # 如果Stage1完成，返回完成状态的信息
+        if result.get("next_action") == "proceed_to_stage2":
+            response_data.update({
+                "stage": "stage1_complete",
+                "requirement_id": result.get("requirement_id"),
+                "requirements": result.get("requirements"),
+                "action": "stage1_completed"
+            })
+        else:
+            # Stage1未完成，返回收集状态的信息
+            response_data.update({
+                "stage": "stage1_collecting", 
+                "current_stage": result["lacked_info"]["stage"],
+                "missing_fields": result["lacked_info"]["missing_fields"],
+                "completion_rate": result["lacked_info"]["completion_rate"],
+                "action": "continue_conversation"
+            })
+            
+        return response_data
 
     def _format_general_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """格式化一般响应"""

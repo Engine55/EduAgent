@@ -20,6 +20,7 @@ load_dotenv()
 # 分镜生成prompt模板
 STORYBOARD_PROMPT = """你是一名"教育游戏分镜设计师 + 编剧 + 美术指导"。请基于【RPG框架】和【关卡数据】为这个关卡生成完整的分镜脚本，最终只输出一个 JSON 对象，**不要**输出任何解释或多余文本。
 
+
 【RPG框架】
 - 标题：{title}
 - 世界观：{worldview}
@@ -37,10 +38,6 @@ STORYBOARD_PROMPT = """你是一名"教育游戏分镜设计师 + 编剧 + 美�
 - 下一关选项：{next_options}
   请在"场景转换"中使用格式：目标节点ID: 选项描述
 - 是否结束节点：{is_final}
-
-【学科信息】
-- 学科：{subject}
-- 年级：{grade}
 
 【输出要求】
 
