@@ -22,7 +22,7 @@ interface NodeData {
       角色: string
       内容: string
     }>
-    学习对话?: Array<{
+    探索对话?: Array<{
       角色: string
       内容: string
     }>
