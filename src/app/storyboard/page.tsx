@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import ReactFlow, {
   Node,
   Edge,
@@ -41,11 +42,14 @@ interface StoryboardData {
 interface StoryData {
   story_id: string
   story_title: string
+  subject?: string
+  grade?: string
   storyboards: Array<{
     stage_index: number
     stage_name: string
     stage_id: string
     storyboard: StoryboardData
+    teachingGoal?: string
   }>
 }
 
@@ -62,8 +66,15 @@ export default function StoryboardPage() {
   useEffect(() => {
     async function loadStoryboard() {
       try {
-        const response = await fetch('/storyboards_story_09965411_20250912_051931.json')
-        const storyData: StoryData = await response.json()
+        // 从sessionStorage获取生成的数据
+        const generatedData = sessionStorage.getItem('generatedStoryboardData')
+        
+        if (!generatedData) {
+          throw new Error('没有找到故事板数据，请先生成游戏内容')
+        }
+        
+        console.log('📊 使用生成的故事板数据')
+        const storyData: StoryData = JSON.parse(generatedData)
         
         const newNodes: Node[] = []
         const newEdges: Edge[] = []
@@ -76,6 +87,9 @@ export default function StoryboardPage() {
             script: storyboard.storyboard.剧本,
             imagePrompt: storyboard.storyboard.图片提示词 || '',
             sceneInfo: storyboard.storyboard.分镜基础信息,
+            teachingGoal: storyboard.teachingGoal,
+            subject: storyData.subject,
+            grade: storyData.grade,
           }
 
           newNodes.push({
@@ -106,6 +120,8 @@ export default function StoryboardPage() {
         setEdges(newEdges)
       } catch (error) {
         console.error('Failed to load storyboard data:', error)
+        // 可以设置一个错误状态来显示给用户
+        alert(`加载故事板数据失败: ${error instanceof Error ? error.message : '未知错误'}`)
       } finally {
         setIsLoading(false)
       }
@@ -116,14 +132,27 @@ export default function StoryboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">加载故事板数据中...</div>
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-4"></div>
+          <div className="text-lg text-white">加载故事板数据中...</div>
+          <div className="text-sm text-gray-300 mt-2">正在构建ReactFlow节点图...</div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div style={{ width: '100vw', height: '100vh' }} className="relative">
+      {/* 返回首页按钮 */}
+      <div className="absolute top-4 left-4 z-10">
+        <Link 
+          href="/"
+          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-semibold shadow-lg"
+        >
+          ← 返回首页
+        </Link>
+      </div>
       <ReactFlow
         nodes={nodes}
         edges={edges}

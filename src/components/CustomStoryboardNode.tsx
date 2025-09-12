@@ -26,7 +26,22 @@ interface NodeData {
       角色: string
       内容: string
     }>
-    问答环节?: any
+    互动问答环节?: {
+      互动类型: string
+      NPC: string
+      主角选项: {
+        说明?: string
+        选项A?: string
+        选项B?: string
+        正确答案: string
+        互动说明?: string
+      }
+      反馈机制: {
+        正确反馈: string
+        错误反馈: string
+        互动提示?: string
+      }
+    }
     场景转换?: { [key: string]: string }
   }
   script: {
@@ -47,6 +62,9 @@ interface NodeData {
     时长估计: string
     关键事件: string
   }
+  teachingGoal?: string
+  subject?: string
+  grade?: string
 }
 
 interface CustomStoryboardNodeProps {
@@ -55,6 +73,7 @@ interface CustomStoryboardNodeProps {
 
 const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => {
   const [showDialogue, setShowDialogue] = useState(false)
+  const [showScript, setShowScript] = useState(false)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
@@ -95,6 +114,28 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
     }
   }
 
+  const downloadDialogue = (dialogueContent: string) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const filename = `dialogue_${data.sceneName}_${timestamp}.txt`
+    
+    const content = `场景：${data.sceneName}\n` +
+                   `学科：${data.subject || '未知'} (${data.grade || '未知'}年级)\n` +
+                   `教学目标：${data.teachingGoal || '未明确'}\n` +
+                   `生成时间：${new Date().toLocaleString()}\n` +
+                   `\n${'='.repeat(50)}\n\n` +
+                   dialogueContent
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   const handleGenerateDialogue = async () => {
     if (isGeneratingDialogue) return
 
@@ -112,6 +153,9 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
           characters: data.characters,
           dialogue: data.dialogue,
           script: data.script,
+          teachingGoal: data.teachingGoal,
+          subject: data.subject,
+          grade: data.grade,
         }),
       })
 
@@ -120,6 +164,8 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       if (result.success) {
         setGeneratedDialogue(result.dialogue)
         setShowDialogue(true)
+        // 自动下载对话文件
+        downloadDialogue(result.dialogue)
       } else {
         setDialogueError(result.error || '对话生成失败')
       }
@@ -132,7 +178,7 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
   }
 
   return (
-    <div className="bg-white border-2 border-purple-300 rounded-lg shadow-lg min-w-[300px] max-w-[350px] flex flex-col">
+    <div className="bg-white border-2 border-purple-300 rounded-lg shadow-lg min-w-[380px] max-w-[420px] min-h-[800px] flex flex-col">
       <Handle type="target" position={Position.Top} />
       
       {/* 节点标题 */}
@@ -142,7 +188,7 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       </div>
       
       {/* 第一块：图片区域 */}
-      <div className="p-3 border-b border-gray-200 bg-gray-50 h-32">
+      <div className="p-3 border-b border-gray-200 bg-gray-50 h-299">
         {generatedImage ? (
           <div className="w-full h-full relative rounded overflow-hidden">
             <img 
@@ -187,19 +233,29 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
         )}</div>
       
       {/* 第二块：剧本段落 */}
-      <div className="p-3 border-b border-gray-200 flex-1">
-        <h4 className="font-semibold text-gray-800 mb-2 text-sm">剧本</h4>
-        <div className="space-y-2 text-xs">
-          <div className="p-2 bg-yellow-50 rounded">
-            <p className="text-gray-700 leading-relaxed">{data.script.旁白}</p>
-          </div>
-          <div className="p-2 bg-blue-50 rounded">
-            <p className="text-gray-700 leading-relaxed">{data.script.情节描述}</p>
-          </div>
-          <div className="p-2 bg-green-50 rounded">
-            <p className="text-gray-700 leading-relaxed">{data.script.互动设计}</p>
-          </div>
+      <div className="p-3 border-b border-gray-200">
+        <div className="flex justify-between items-center mb-2">
+          <h4 className="font-semibold text-gray-800 text-sm">剧本</h4>
+          <button 
+            className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 transition-colors"
+            onClick={() => setShowScript(!showScript)}
+          >
+            {showScript ? '收起' : '展开'}剧本
+          </button>
         </div>
+        {showScript && (
+          <div className="space-y-1 text-xs select-text">
+            <div className="p-1.5 bg-yellow-50 rounded">
+              <p className="text-gray-700 leading-snug select-text cursor-text">{data.script.旁白}</p>
+            </div>
+            <div className="p-1.5 bg-blue-50 rounded">
+              <p className="text-gray-700 leading-snug select-text cursor-text">{data.script.情节描述}</p>
+            </div>
+            <div className="p-1.5 bg-green-50 rounded">
+              <p className="text-gray-700 leading-snug select-text cursor-text">{data.script.互动设计}</p>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* 第三块：角色介绍 */}
@@ -235,6 +291,14 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
                 {isGeneratingDialogue ? '生成中...' : '生成对话'}
               </button>
             )}
+            {generatedDialogue && (
+              <button 
+                className="px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors"
+                onClick={() => downloadDialogue(generatedDialogue)}
+              >
+                下载对话
+              </button>
+            )}
             <button 
               className="px-2 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors"
               onClick={() => setShowDialogue(!showDialogue)}
@@ -245,14 +309,14 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
           </div>
         </div>
         {showDialogue && (
-          <div className="mt-2 p-3 bg-purple-50 rounded text-xs max-h-40 overflow-y-auto">
+          <div className="mt-2 p-3 bg-purple-50 rounded text-xs max-h-40 overflow-y-auto select-text">
             {isGeneratingDialogue ? (
               <div className="flex items-center justify-center py-4">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500 mr-2"></div>
                 <span className="text-purple-600">生成对话中...</span>
               </div>
             ) : generatedDialogue ? (
-              <div className="whitespace-pre-line text-gray-700 leading-relaxed">
+              <div className="whitespace-pre-line text-gray-700 leading-relaxed select-text cursor-text">
                 {generatedDialogue}
               </div>
             ) : dialogueError ? (

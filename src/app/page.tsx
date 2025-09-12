@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface Message {
   id: string
@@ -25,7 +26,10 @@ export default function Home() {
     stage: 'not_started',
     ready_for_stage2: false
   })
+  const [storyboardData, setStoryboardData] = useState<any>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   // 初始化对话
   useEffect(() => {
@@ -152,6 +156,69 @@ export default function Home() {
     }
   }
 
+  const handleGenerateStoryboards = async () => {
+    if (!conversationStage.requirement_id || isGenerating) return
+
+    setIsGenerating(true)
+    
+    try {
+      console.log('🎬 开始生成游戏场景，需求ID:', conversationStage.requirement_id)
+      
+      const response = await fetch('http://localhost:8000/generate_complete_storyboards', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requirement_id: conversationStage.requirement_id
+        }),
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log('✅ 故事板生成成功:', result.data)
+        setStoryboardData(result.data)
+        
+        // 添加一条成功消息到对话中
+        const successMessage: Message = {
+          id: (Date.now()).toString(),
+          type: 'ai',
+          content: `🎉 游戏内容生成完成！\n\n✅ RPG故事框架：${result.data.rpg_framework?.标题 || '未知标题'}\n✅ 生成关卡数：${result.data.total_stages}个\n✅ 故事板数：${result.data.successful_storyboards}个\n\n准备跳转到故事板可视化页面...`,
+          timestamp: new Date()
+        }
+        setMessages(prev => [...prev, successMessage])
+
+        // 将数据存储到sessionStorage，然后跳转到故事板页面
+        const storyboardPageData = {
+          story_id: result.data.requirement_id,
+          story_title: result.data.rpg_framework?.标题 || '未知故事',
+          storyboards: result.data.storyboards_list || []
+        }
+        
+        sessionStorage.setItem('generatedStoryboardData', JSON.stringify(storyboardPageData))
+        
+        // 延迟1秒后跳转，让用户看到成功消息
+        setTimeout(() => {
+          router.push('/storyboard')
+        }, 1500)
+      } else {
+        throw new Error(result.error || '生成失败')
+      }
+    } catch (error) {
+      console.error('❌ 生成故事板失败:', error)
+      const errorMessage: Message = {
+        id: (Date.now()).toString(),
+        type: 'ai',
+        content: `❌ 游戏内容生成失败：${error instanceof Error ? error.message : '未知错误'}。请稍后重试。`,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex flex-col">
       {/* 头部导航 */}
@@ -165,10 +232,13 @@ export default function Home() {
             >
               查看故事板
             </Link>
-            {conversationStage.ready_for_stage2 && (
-              <button className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
-                生成故事板
-              </button>
+{conversationStage.ready_for_stage2 && (
+              <Link 
+                href="/storyboard" 
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+              >
+                查看已生成故事板
+              </Link>
             )}
           </div>
         </div>
@@ -229,13 +299,11 @@ export default function Home() {
                 <p className="text-green-300 text-xs mt-1">对话已结束，您可以开始生成游戏场景</p>
               </div>
               <button 
-                className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg transition-all font-bold text-lg shadow-lg transform hover:scale-105"
-                onClick={() => {
-                  // TODO: 实现生成游戏场景逻辑
-                  console.log('生成游戏场景', conversationStage.requirement_id)
-                }}
+                className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 disabled:from-gray-500 disabled:to-gray-600 text-white rounded-lg transition-all font-bold text-lg shadow-lg transform hover:scale-105 disabled:transform-none disabled:cursor-not-allowed"
+                onClick={handleGenerateStoryboards}
+                disabled={isGenerating || !conversationStage.requirement_id}
               >
-                🎮 Generate Game Scene
+                {isGenerating ? '🎬 正在生成中...' : '🎮 Generate Game Scene'}
               </button>
             </div>
           ) : (
@@ -261,6 +329,26 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* 简单的状态显示区域 */}
+      {storyboardData && (
+        <div className="max-w-4xl mx-auto w-full p-4 mt-6">
+          <div className="bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-4 border border-purple-500/30 text-center">
+            <h2 className="text-lg font-bold text-white mb-2">
+              🎉 游戏内容生成完成！
+            </h2>
+            <p className="text-green-300 text-sm mb-4">
+              ✅ {storyboardData.rpg_framework?.标题 || '未知标题'} - {storyboardData.total_stages}个关卡 - {storyboardData.successful_storyboards}个故事板
+            </p>
+            <Link
+              href="/storyboard"
+              className="inline-block px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-semibold"
+            >
+              🎬 查看ReactFlow故事板可视化
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
