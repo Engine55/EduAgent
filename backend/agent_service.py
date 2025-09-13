@@ -35,6 +35,9 @@ class AgentService:
             "plot_requirements": None,
             "interaction_requirements": None
         }
+        
+        # 推理状态持久化 - 只在开始新会话时初始化
+        self.reasoning_state = None
 
         print(f"AgentService初始化完成，使用模型: {model_name}，启用智能推理")
 
@@ -42,6 +45,13 @@ class AgentService:
         """开始对话会话"""
         # 重新生成会话ID
         self.session_id = str(uuid.uuid4())
+        
+        # 初始化推理状态 - 只在开始新会话时做一次
+        self.reasoning_state = self.reasoning_graph.initialize_reasoning_state(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            collected_info=self.collected_info
+        )
 
         welcome_message = """🎮 您好！我是教育游戏设计助手！
 
@@ -107,6 +117,13 @@ class AgentService:
             "plot_requirements": None,
             "interaction_requirements": None
         }
+        
+        # 重置推理状态
+        self.reasoning_state = self.reasoning_graph.initialize_reasoning_state(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            collected_info=self.collected_info
+        )
 
         return {
             "status": "session_reset",

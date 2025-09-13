@@ -319,6 +319,228 @@ class PromptTemplates:
 
         return f"{base_encouragement} {specific_guidance}".strip()
 
+    def get_sufficiency_assessment_prompt(self) -> PromptTemplate:
+        """获取信息详细度评估模板"""
+        template = """你是专业的教育游戏设计评估专家。请评估以下收集到的信息是否足够详细，能够用来生成高质量的教育游戏内容。
+
+已收集信息：
+{collected_info}
+
+对话上下文：
+{conversation_context}
+
+请从以下4个维度评估信息的详细度充足性，每个维度给出0-100分的评分和具体理由：
+
+1. **基础信息充足性** (学科、年级、知识点的明确性和具体性)
+2. **教学信息充足性** (教学目标和难点的清晰度和可操作性) 
+3. **游戏设定充足性** (游戏风格、角色、世界观的完整性和吸引力)
+4. **情节设定充足性** (故事情节、互动方式的丰富性和教育性)
+
+请以JSON格式返回评估结果：
+{{
+    "dimension_scores": {{
+        "基础信息": <分数>,
+        "教学信息": <分数>,
+        "游戏设定": <分数>,
+        "情节设定": <分数>
+    }},
+    "dimension_analysis": {{
+        "基础信息": "<详细分析>",
+        "教学信息": "<详细分析>",
+        "游戏设定": "<详细分析>",
+        "情节设定": "<详细分析>"
+    }},
+    "overall_score": <总体加权平均分>,
+    "insufficient_areas": ["<需要补充的方面1>", "<需要补充的方面2>"],
+    "assessment_summary": "<整体评估总结>"
+}}
+
+评分标准：
+- 90-100分：信息非常详细完整，可以直接生成高质量内容
+- 75-89分：信息基本充足，可能需要少量补充
+- 60-74分：信息有一定基础，但需要重要补充
+- 60分以下：信息不足，需要大量补充
+
+请确保返回有效的JSON格式。"""
+        
+        return PromptTemplate(
+            input_variables=["collected_info", "conversation_context"],
+            template=template
+        )
+    
+    def get_sufficiency_questions_prompt(self) -> PromptTemplate:
+        """获取详细度补充问题生成模板"""
+        template = """你是专业的教育游戏设计助手。根据以下信息评估结果，生成针对性的补充问题来完善游戏设计信息。
+
+当前收集信息：
+{collected_info}
+
+详细度评估结果：
+{sufficiency_scores}
+总体评分：{overall_score}/100
+
+对话上下文：
+{conversation_context}
+
+请根据评估结果生成3-5个具体的补充问题，重点关注评分较低的维度。要求：
+
+1. **问题应该具体明确**，避免模糊的开放性问题
+2. **优先关注评分低于75分的维度**
+3. **结合对话上下文**，避免重复已经讨论过的内容
+4. **循序渐进**，一次不要问太多问题
+5. **友好自然**，保持对话的连贯性
+
+回复格式：
+首先简要说明当前完成度和需要补充的方面，然后提出具体问题。
+
+示例回复风格：
+"根据目前的信息，基础设定已经比较完整了！不过为了设计出更优质的教育游戏，我还需要了解一些细节：
+
+1. [具体问题1]
+2. [具体问题2] 
+3. [具体问题3]
+
+这些信息将帮助我为您生成更精准、更有趣的游戏内容。"
+
+请生成回复："""
+        
+        return PromptTemplate(
+            input_variables=["collected_info", "sufficiency_scores", "overall_score", "conversation_context"],
+            template=template
+        )
+    
+    def get_fitness_check_prompt(self) -> PromptTemplate:
+        """获取内容适宜性检查模板"""
+        template = """你是专业的教育内容审查专家。请检查以下教育游戏设计需求的适宜性，确保内容适合目标年龄段的学生。
+
+收集的信息：
+{collected_info}
+
+对话上下文：
+{conversation_context}
+
+请从以下维度检查适宜性：
+
+1. **年龄适宜性** - 内容是否适合目标年级的学生
+2. **教育价值观** - 是否传递正确的教育价值观
+3. **内容安全性** - 是否包含不当内容（暴力、恐怖、歧视等）
+4. **心理健康** - 是否会对学生心理造成负面影响
+5. **文化敏感性** - 是否尊重不同文化背景
+6. **学习难度** - 游戏难度是否与年级水平匹配
+
+请以JSON格式返回检查结果：
+{{
+    "overall_fitness": <"passed" 或 "concerns">,
+    "concerns": [
+        {{
+            "category": "<问题类别>",
+            "severity": "<high/medium/low>",
+            "description": "<具体问题描述>",
+            "suggestion": "<改进建议>"
+        }}
+    ],
+    "positive_aspects": ["<积极方面1>", "<积极方面2>"],
+    "fitness_score": <0-100的适宜性评分>,
+    "assessment_summary": "<整体适宜性总结>"
+}}
+
+检查标准：
+- high severity: 严重违反教育原则或安全标准
+- medium severity: 需要调整但不影响整体适宜性  
+- low severity: 建议性改进
+
+请确保返回有效的JSON格式。"""
+        
+        return PromptTemplate(
+            input_variables=["collected_info", "conversation_context"],
+            template=template
+        )
+    
+    def get_negotiate_response_prompt(self) -> PromptTemplate:
+        """获取适宜性协商回复模板"""
+        template = """你是专业的教育游戏设计助手。在内容适宜性检查中发现了一些需要讨论的问题，请以友好、专业的方式与用户协商解决方案。
+
+当前收集信息：
+{collected_info}
+
+适宜性检查结果：
+总体评估：{overall_fitness}
+适宜性评分：{fitness_score}/100
+
+发现的问题：
+{concerns}
+
+积极方面：
+{positive_aspects}
+
+对话上下文：
+{conversation_context}
+
+请生成一个友好、建设性的回复，要求：
+
+1. **肯定积极方面** - 先赞扬用户提供的良好想法
+2. **温和提出问题** - 以建议的方式提出需要调整的地方
+3. **提供解决方案** - 给出具体的改进建议
+4. **保持合作态度** - 强调是为了创造更好的教育体验
+5. **邀请讨论** - 询问用户的想法和偏好
+
+回复应该类似这样的风格：
+"您的游戏创意很棒！特别是[积极方面]。为了确保游戏更适合目标年龄段的学生，我建议我们在几个方面稍作调整：
+
+[具体建议和原因]
+
+您觉得这样的调整如何？或者您有其他想法吗？"
+
+请生成回复："""
+        
+        return PromptTemplate(
+            input_variables=["collected_info", "overall_fitness", "fitness_score", "concerns", "positive_aspects", "conversation_context"],
+            template=template
+        )
+    
+    def get_finish_response_prompt(self) -> PromptTemplate:
+        """获取完成确认回复模板"""
+        template = """你是专业的教育游戏设计助手。经过详细的信息收集和评估，现在准备为用户生成完整的教育游戏内容。请生成一个专业、令人兴奋的完成确认回复。
+
+最终收集信息：
+{collected_info}
+
+详细度评估结果：
+{sufficiency_scores}
+平均评分：{average_score}/100
+
+对话历程：
+{conversation_context}
+
+请生成一个专业而令人兴奋的完成回复，包含：
+
+1. **庆祝完成** - 祝贺用户完成详细的需求收集过程
+2. **总结收集成果** - 简要总结收集到的关键信息
+3. **确认理解** - 确认对用户需求的理解是否准确
+4. **预告生成内容** - 说明将要生成什么样的游戏内容
+5. **下一步指引** - 告知用户如何进行下一步
+
+回复应该专业且充满期待，类似：
+"🎉 太棒了！经过我们的详细交流，教育游戏的需求收集已经完成！
+
+让我总结一下我们收集到的信息：
+[关键信息总结]
+
+基于这些信息，我将为您生成：
+• 完整的游戏故事框架和剧情设计
+• 每个关卡的详细场景和任务设置  
+• 角色对话和互动内容
+• 教育目标的巧妙融入方式
+
+请确认以上理解是否准确？如果没有问题，我就开始为您生成完整的教育游戏内容！"
+
+请生成回复："""
+        
+        return PromptTemplate(
+            input_variables=["collected_info", "sufficiency_scores", "average_score", "conversation_context"],
+            template=template
+        )
+
 
 # 便利函数
 def create_prompt_templates() -> PromptTemplates:

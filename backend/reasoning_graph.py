@@ -11,8 +11,9 @@ import os
 from database_client import db_client
 
 
-class Stage1ReasoningGraph:
-    def __init__(self, model_name="gpt-4o-mini", extractor=None, user_id="1"):
+# ==================== StateGraph版本的ReasoningGraph ====================
+
+class ReasoningState(TypedDict):
         """初始化Stage1推理图"""
         import os
         from dotenv import load_dotenv
@@ -193,7 +194,7 @@ class Stage1ReasoningGraph:
 
         if current_stage == "complete":
             return {"stage": "complete", "missing_fields": [], "missing_details": {}, "completion_rate": 1.0}
-
+        print(f"current stage is {current_stage}")
         # 根据当前阶段获取缺失信息
         if current_stage == "basic_info":
             return self._check_basic_info_gaps()
@@ -574,6 +575,10 @@ class ReasoningState(TypedDict):
     collected_info: Dict[str, Any]
     stage1_complete: bool
     
+    # === 从Stage1保留的状态字段 ===
+    extracted_info: Dict[str, Any]  # 当前轮提取的信息
+    current_stage: str              # 当前所在阶段
+    
     # 详细度评估状态
     sufficiency_score: Dict[str, float]  # 各维度sufficiency评分
     overall_sufficiency: float           # 总体sufficiency评分
@@ -591,7 +596,7 @@ class ReasoningState(TypedDict):
 
 
 class ReasoningGraph:
-    """基于StateGraph的智能推理图"""
+    """基于StateGraph的智能推理图 - 合并了Stage1功能"""
     
     def __init__(self, db_client=None):
         self.db_client = db_client or db_client
@@ -603,7 +608,7 @@ class ReasoningGraph:
         
         self.llm = ChatOpenAI(
             model="gpt-4o-mini", 
-            temperature=0.3,  # 评估时使用较低温度
+            temperature=0.7,  # 对话生成使用较高温度
             openai_api_key=os.getenv("OPENAI_API_KEY")
         )
         
@@ -611,10 +616,275 @@ class ReasoningGraph:
         from info_extractor import create_info_extractor
         self.extractor = create_info_extractor("gpt-4o-mini")
         
-        # 初始化Stage1ReasoningGraph实例，复用状态
-        self.stage1_graph = Stage1ReasoningGraph("gpt-4o-mini", self.extractor)
+        # ===== 从Stage1ReasoningGraph合并的状态管理 =====
+        
+        # 初始化Memory (从Stage1合并)
+        self.memory = ConversationSummaryBufferMemory(
+            max_token_limit=8000,
+            llm=self.llm,
+            return_messages=True
+        )
+        
+        # 收集的信息存储 (从Stage1合并)
+        self.collected_info = {
+            "subject": None,
+            "grade": None,
+            "knowledge_points": None,
+            "teaching_goals": None,
+            "teaching_difficulties": None,
+            "game_style": None,
+            "character_design": None,
+            "world_setting": None,
+            "plot_requirements": None,
+            "interaction_requirements": None
+        }
+        
+        # 完成条件定义 (从Stage1合并)
+        self.completion_criteria = {
+            "basic_info": ["subject", "grade", "knowledge_points"],
+            "teaching_info": ["teaching_goals", "teaching_difficulties"],
+            "gamestyle_info": ["game_style", "character_design", "world_setting"],
+            "scene_info": ["plot_requirements", "interaction_requirements"]
+        }
+        
+        # 导入prompt模板 (从Stage1合并)
+        from prompt_templates import PromptTemplates
+        self.prompts = PromptTemplates()
         
         self.graph = self._build_reasoning_graph()
+    
+    # ===== 从Stage1ReasoningGraph合并的方法 =====
+    
+    def determine_current_stage(self) -> str:
+        """确定当前应该收集哪个阶段的信息"""
+        if not self._stage_completed("basic_info"):
+            return "basic_info"
+        elif not self._stage_completed("teaching_info"):
+            return "teaching_info"
+        elif not self._stage_completed("gamestyle_info"):
+            return "gamestyle_info"
+        elif not self._stage_completed("scene_info"):
+            return "scene_info"
+        else:
+            return "complete"
+
+    def _stage_completed(self, stage: str) -> bool:
+        """检查特定阶段是否完成"""
+        required_fields = self.completion_criteria[stage]
+        for field in required_fields:
+            value = self.collected_info.get(field)
+            if not value:
+                return False
+            if isinstance(value, list) and len(value) == 0:
+                return False
+        return True
+        
+    async def extract_info(self, user_input: str, stage: str = "basic_info") -> Dict:
+        """提取用户输入中的信息"""
+        return await self.extractor.extract_from_user_input(user_input, stage)
+
+    def update_state(self, extracted_info: Dict) -> None:
+        """更新收集状态"""
+        print(f"DEBUG update_state: received = {extracted_info}")
+        for key, value in extracted_info.items():
+            print(f"DEBUG: processing key={key}, value={value}")
+            if value and key in self.collected_info:
+                if isinstance(value, list):
+                    # 处理列表类型的数据
+                    if self.collected_info[key]:
+                        # 合并列表，去重
+                        existing = self.collected_info[key] if isinstance(self.collected_info[key], list) else [self.collected_info[key]]
+                        combined = existing + value
+                        self.collected_info[key] = list(set(combined))
+                    else:
+                        self.collected_info[key] = value
+                else:
+                    # 处理字符串类型的数据
+                    self.collected_info[key] = value
+        
+        print(f"DEBUG update_state: final collected_info = {self.collected_info}")
+
+    def check_stage_completion(self) -> bool:
+        """检查是否达成Stage1目标"""
+        return self.determine_current_stage() == "complete"
+    
+    def get_lacked_info(self) -> Dict:
+        """获取缺失信息详情"""
+        current_stage = self.determine_current_stage()
+
+        if current_stage == "complete":
+            return {"stage": "complete", "missing_fields": [], "missing_details": {}, "completion_rate": 1.0}
+        
+        print(f"current stage is {current_stage}")
+        # 根据当前阶段获取缺失信息
+        if current_stage == "basic_info":
+            return self._check_basic_info_gaps()
+        elif current_stage == "teaching_info":
+            return self._check_teaching_info_gaps()
+        elif current_stage == "gamestyle_info":
+            return self._check_gamestyle_info_gaps()
+        elif current_stage == "scene_info":
+            return self._check_scene_info_gaps()
+        else:
+            return {"stage": current_stage, "missing_fields": [], "missing_details": {}, "completion_rate": 0.0}
+
+    def _check_basic_info_gaps(self) -> Dict:
+        """检查基础信息缺失"""
+        missing_fields = []
+        missing_details = {}
+        
+        if not self.collected_info.get("subject"):
+            missing_fields.append("subject")
+            missing_details["subject"] = "学科领域"
+        if not self.collected_info.get("grade"):
+            missing_fields.append("grade")
+            missing_details["grade"] = "目标年级"
+        if not self.collected_info.get("knowledge_points"):
+            missing_fields.append("knowledge_points")
+            missing_details["knowledge_points"] = "具体知识点"
+        
+        completion_rate = 1.0 - len(missing_fields) / 3
+        return {
+            "stage": "basic_info",
+            "missing_fields": missing_fields,
+            "missing_details": missing_details,
+            "completion_rate": completion_rate
+        }
+
+    def _check_teaching_info_gaps(self) -> Dict:
+        """检查教学信息缺失"""
+        missing_fields = []
+        missing_details = {}
+        
+        if not self.collected_info.get("teaching_goals"):
+            missing_fields.append("teaching_goals")
+            missing_details["teaching_goals"] = "教学目标"
+        if not self.collected_info.get("teaching_difficulties"):
+            missing_fields.append("teaching_difficulties")
+            missing_details["teaching_difficulties"] = "教学难点"
+        
+        completion_rate = 1.0 - len(missing_fields) / 2
+        return {
+            "stage": "teaching_info",
+            "missing_fields": missing_fields,
+            "missing_details": missing_details,
+            "completion_rate": completion_rate
+        }
+
+    def _check_gamestyle_info_gaps(self) -> Dict:
+        """检查游戏风格信息缺失"""
+        missing_fields = []
+        missing_details = {}
+        
+        if not self.collected_info.get("game_style"):
+            missing_fields.append("game_style")
+            missing_details["game_style"] = "游戏风格"
+        if not self.collected_info.get("character_design"):
+            missing_fields.append("character_design")
+            missing_details["character_design"] = "角色设计"
+        if not self.collected_info.get("world_setting"):
+            missing_fields.append("world_setting")
+            missing_details["world_setting"] = "世界背景"
+        
+        completion_rate = 1.0 - len(missing_fields) / 3
+        return {
+            "stage": "gamestyle_info",
+            "missing_fields": missing_fields,
+            "missing_details": missing_details,
+            "completion_rate": completion_rate
+        }
+
+    def _check_scene_info_gaps(self) -> Dict:
+        """检查情节信息缺失"""
+        missing_fields = []
+        missing_details = {}
+        
+        if not self.collected_info.get("plot_requirements"):
+            missing_fields.append("plot_requirements")
+            missing_details["plot_requirements"] = "情节需求"
+        if not self.collected_info.get("interaction_requirements"):
+            missing_fields.append("interaction_requirements")
+            missing_details["interaction_requirements"] = "互动方式"
+        
+        completion_rate = 1.0 - len(missing_fields) / 2
+        return {
+            "stage": "scene_info",
+            "missing_fields": missing_fields,
+            "missing_details": missing_details,
+            "completion_rate": completion_rate
+        }
+    
+    async def generate_response_with_lacked_info(self, lacked_info: Dict) -> str:
+        """基于缺失信息生成回复"""
+        # 获取动态prompt
+        dynamic_prompt = self.prompts.generate_dynamic_prompt(
+            lacked_info["stage"],
+            self.collected_info,
+            lacked_info
+        )
+        print(f"dynamic prompt is : {dynamic_prompt}")
+        
+        # 创建对话链
+        conversation = ConversationChain(
+            llm=self.llm,
+            memory=self.memory,
+            prompt=dynamic_prompt
+        )
+        
+        # 生成回复（空输入，让模板处理）
+        response = await conversation.apredict(input="")
+        return response.strip()
+    
+    def save_final_requirements(self) -> Dict:
+        """保存最终收集的需求信息到数据库"""
+        try:
+            # 检查数据库连接
+            if not self.db_client:
+                return {
+                    "success": False,
+                    "message": "数据库未连接，无法保存",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            # 生成唯一ID
+            timestamp = datetime.now().isoformat()
+            content_hash = hashlib.md5(json.dumps(self.collected_info, sort_keys=True).encode()).hexdigest()[:8]
+            requirement_id = f"requirement_{timestamp}_{content_hash}"
+            
+            # 准备保存的数据
+            requirement_data = {
+                "id": requirement_id,
+                "user_id": "default_user",  # 简化为default
+                "timestamp": timestamp,
+                "collected_info": self.collected_info,
+                "final_requirements": self.collected_info,  # 为了兼容性
+                "status": "completed"
+            }
+            
+            # 保存到数据库
+            save_success = self.db_client.save_requirement(requirement_data)
+            
+            if save_success:
+                return {
+                    "success": True,
+                    "requirement_id": requirement_id,
+                    "message": "需求信息已成功保存",
+                    "timestamp": timestamp
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "保存失败",
+                    "timestamp": timestamp
+                }
+                
+        except Exception as e:
+            print(f"⚠️ 保存需求信息失败: {e}")
+            return {
+                "success": False,
+                "message": f"保存失败: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            }
     
     def _build_reasoning_graph(self) -> StateGraph:
         """构建推理状态图"""
@@ -623,19 +893,17 @@ class ReasoningGraph:
         
         # ==================== 节点定义 ====================
         
-        # 阶段1：检查基础信息完整性
+        # 新流程：Stage1集成的节点
         workflow.add_node("check_info_completed", self._check_info_completed)
+        workflow.add_node("extract_and_update_info", self._extract_and_update_info)
+        workflow.add_node("determine_stage", self._determine_stage)
         workflow.add_node("generate_lack_response", self._generate_lack_response)
         
-        # 阶段2：检查信息详细度充足性
+        # 保留：后续详细度和适宜性检查节点
         workflow.add_node("need_more_details", self._assess_sufficiency)
         workflow.add_node("generate_need_more_details_response", self._generate_sufficiency_questions)
-        
-        # 阶段3：检查内容适宜性
         workflow.add_node("check_fitness", self._check_fitness)
         workflow.add_node("generate_negotiate_response", self._generate_negotiate_response)
-        
-        # 最终完成阶段
         workflow.add_node("generate_finish_response", self._generate_finish_response)
         
         # ==================== 流程路由 ====================
@@ -643,17 +911,23 @@ class ReasoningGraph:
         # 设置入口点
         workflow.set_entry_point("check_info_completed")
         
-        # 阶段1路由：检查基础信息完整性
+        # 新流程：总是流转到信息提取
+        workflow.add_edge("check_info_completed", "extract_and_update_info")
+        
+        # 信息提取后流转到阶段判断
+        workflow.add_edge("extract_and_update_info", "determine_stage")
+        
+        # 阶段判断后的条件路由
         workflow.add_conditional_edges(
-            "check_info_completed",
-            self._decide_after_info_check,
+            "determine_stage",
+            self._decide_stage_routing,
             {
                 "info_incomplete": "generate_lack_response",
-                "info_complete": "need_more_details"
+                "info_complete": "need_more_details"  # 继续原有流程
             }
         )
         
-        # 基础信息不足时，生成回复后结束（等待用户补充）
+        # 信息不足时结束（等待用户补充）
         workflow.add_edge("generate_lack_response", END)
         
         # 阶段2路由：检查详细度充足性
@@ -724,6 +998,76 @@ class ReasoningGraph:
             print("✅ 适宜性检查通过，准备完成")
             return "fitness_passed"
     
+    # ==================== 新增节点函数 ====================
+    
+    async def _extract_and_update_info(self, state: ReasoningState) -> ReasoningState:
+        """提取并更新用户输入的信息"""
+        try:
+            # 获取最新的用户消息
+            messages = state.get("messages", [])
+            if not messages:
+                return state
+                
+            latest_message = messages[-1]
+            if latest_message.get("role") != "user":
+                return state
+                
+            user_input = latest_message.get("content", "")
+            current_stage = state.get("current_stage", "basic_info")
+            
+            # 提取信息
+            extracted_info = await self.extract_info(user_input, current_stage)
+            print(f"DEBUG: 提取到的信息: {extracted_info}")
+            
+            # 更新状态
+            self.update_state(extracted_info)
+            
+            # 更新state中的信息
+            state["extracted_info"] = extracted_info
+            state["collected_info"] = self.collected_info.copy()
+            
+            return state
+            
+        except Exception as e:
+            print(f"❌ 信息提取失败: {e}")
+            return state
+    
+    async def _determine_stage(self, state: ReasoningState) -> ReasoningState:
+        """确定当前阶段和完成状态"""
+        try:
+            # 确定当前阶段
+            current_stage = self.determine_current_stage()
+            stage1_complete = self.check_stage_completion()
+            
+            print(f"DEBUG: 当前阶段: {current_stage}, Stage1完成: {stage1_complete}")
+            
+            # 更新状态
+            state["current_stage"] = current_stage
+            state["stage1_complete"] = stage1_complete
+            
+            # 如果完成，设置ready_for_generation和保存需求
+            if stage1_complete:
+                save_result = self.save_final_requirements()
+                if save_result["success"]:
+                    state["ready_for_generation"] = True
+                    state["final_requirements"] = self.collected_info.copy()
+                    print(f"✅ 需求信息已保存: {save_result['requirement_id']}")
+            
+            return state
+            
+        except Exception as e:
+            print(f"❌ 阶段判断失败: {e}")
+            return state
+    
+    def _decide_stage_routing(self, state: ReasoningState) -> str:
+        """决定阶段路由：完成或未完成"""
+        stage1_complete = state.get("stage1_complete", False)
+        
+        if stage1_complete:
+            return "info_complete"
+        else:
+            return "info_incomplete"
+    
     # ==================== 节点实现占位符 ====================
     # 这些方法在Step 2中实现
     
@@ -731,39 +1075,35 @@ class ReasoningGraph:
         """检查基础信息完整性"""
         print("🔍 检查基础信息完整性...")
         
-        # 使用复用的Stage1ReasoningGraph实例，保持状态一致性
-        self.stage1_graph.collected_info = state["collected_info"]
+        # 同步状态
+        self.collected_info = state["collected_info"]
         
-        # 检查是否完成
-        is_complete = self.stage1_graph.check_stage_completion()
-        state["stage1_complete"] = is_complete
-        
-        if is_complete:
-            print("✅ 基础信息收集完成")
-        else:
-            print("❌ 基础信息不完整")
+        # 这个节点现在主要是一个占位符，实际检查在determine_stage中进行
+        print(f"当前collected_info: {self.collected_info}")
             
         return state
     
     async def _generate_lack_response(self, state: ReasoningState) -> ReasoningState:
-        """生成信息不足的回复"""
+        """生成信息不足的回复 - 使用合并的Stage1逻辑"""
         print("📝 生成信息不足回复...")
+        print(f"current collected_info is {self.collected_info}")
         
-        # 使用复用的Stage1ReasoningGraph实例，保持状态一致性
-        self.stage1_graph.collected_info = state["collected_info"]
+        # 同步状态
+        self.collected_info = state["collected_info"]
         
         # 获取缺失信息详情
-        lacked_info = self.stage1_graph.get_lacked_info()
+        lacked_info = self.get_lacked_info()
         
         # 生成回复
-        response = await self.stage1_graph.generate_response_with_lacked_info(lacked_info)
+        response = await self.generate_response_with_lacked_info(lacked_info)
         
         # 更新状态
         state["messages"].append({
             "role": "assistant", 
             "content": response,
             "stage": lacked_info["stage"],
-            "lacked_info": lacked_info
+            "lacked_info": lacked_info,
+            "timestamp": datetime.now().isoformat()
         })
         
         return state
@@ -908,6 +1248,10 @@ class ReasoningGraph:
             collected_info=collected_info,
             stage1_complete=False,
             
+            # === Stage1状态字段 ===
+            extracted_info={},
+            current_stage="basic_info",
+            
             # 详细度评估状态  
             sufficiency_score={},
             overall_sufficiency=0.0,
@@ -947,6 +1291,58 @@ class ReasoningGraph:
             
         except Exception as e:
             print(f"❌ StateGraph执行失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "ready_for_generation": False
+            }
+    
+    async def process_reasoning_request_with_state(self, reasoning_state: Dict[str, Any], 
+                                                  user_input: str) -> Dict[str, Any]:
+        """使用已有状态处理推理请求 - 支持状态持久化"""
+        
+        try:
+            # 添加用户输入到消息历史
+            if "messages" not in reasoning_state:
+                reasoning_state["messages"] = []
+            
+            # 添加用户消息
+            reasoning_state["messages"].append({
+                "role": "user",
+                "content": user_input,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # 同步更新Stage1ReasoningGraph的状态
+            print(f"DEBUG: 同步更新Stage1Graph状态，collected_info: {reasoning_state.get('collected_info', {})}")
+            self.stage1_graph.collected_info = reasoning_state.get("collected_info", {})
+            
+            # 清空之前的memory并重新同步对话历史（避免重复）
+            self.stage1_graph.memory.chat_memory.clear()
+            
+            # 重新添加所有历史消息到memory
+            messages = reasoning_state.get("messages", [])
+            for msg in messages:
+                if msg.get("role") == "user":
+                    self.stage1_graph.memory.chat_memory.add_user_message(msg["content"])
+                elif msg.get("role") == "assistant":
+                    self.stage1_graph.memory.chat_memory.add_ai_message(msg["content"])
+            
+            # 运行图
+            thread_config = {"configurable": {"thread_id": reasoning_state.get("session_id", "default")}}
+            
+            final_state = await self.graph.ainvoke(reasoning_state, config=thread_config)
+            
+            return {
+                "success": True,
+                "final_state": final_state,
+                "ready_for_generation": final_state.get("ready_for_generation", False),
+                "messages": final_state.get("messages", []),
+                "stage": self._determine_current_stage(final_state)
+            }
+            
+        except Exception as e:
+            print(f"❌ StateGraph持久化执行失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -996,47 +1392,12 @@ class ReasoningGraph:
                                     conversation_context: str) -> Dict[str, Any]:
         """使用LLM评估信息详细度充足性"""
         
-        assessment_prompt = f"""你是专业的教育游戏设计评估专家。请评估以下收集到的信息是否足够详细，能够用来生成高质量的教育游戏内容。
-
-已收集信息：
-{self._format_collected_info_for_assessment(collected_info)}
-
-对话上下文：
-{conversation_context}
-
-请从以下4个维度评估信息的详细度充足性，每个维度给出0-100分的评分和具体理由：
-
-1. **基础信息充足性** (学科、年级、知识点的明确性和具体性)
-2. **教学信息充足性** (教学目标和难点的清晰度和可操作性) 
-3. **游戏设定充足性** (游戏风格、角色、世界观的完整性和吸引力)
-4. **情节设定充足性** (故事情节、互动方式的丰富性和教育性)
-
-请以JSON格式返回评估结果：
-{{
-    "dimension_scores": {{
-        "基础信息": <分数>,
-        "教学信息": <分数>,
-        "游戏设定": <分数>,
-        "情节设定": <分数>
-    }},
-    "dimension_analysis": {{
-        "基础信息": "<详细分析>",
-        "教学信息": "<详细分析>",
-        "游戏设定": "<详细分析>",
-        "情节设定": "<详细分析>"
-    }},
-    "overall_score": <总体加权平均分>,
-    "insufficient_areas": ["<需要补充的方面1>", "<需要补充的方面2>"],
-    "assessment_summary": "<整体评估总结>"
-}}
-
-评分标准：
-- 90-100分：信息非常详细完整，可以直接生成高质量内容
-- 75-89分：信息基本充足，可能需要少量补充
-- 60-74分：信息有一定基础，但需要重要补充
-- 60分以下：信息不足，需要大量补充
-
-请确保返回有效的JSON格式。"""
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_sufficiency_assessment_prompt()
+        assessment_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            conversation_context=conversation_context
+        )
 
         try:
             response = await self.llm.ainvoke([{"role": "user", "content": assessment_prompt}])
