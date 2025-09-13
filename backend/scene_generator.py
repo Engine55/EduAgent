@@ -9,6 +9,7 @@
 import json
 import os
 import uuid
+import concurrent.futures
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 from database_client import db_client
@@ -204,11 +205,7 @@ class SceneGenerator:
                 print("❌ 数据解析失败")
                 return None, None
                 
-            # 保存到数据库
-            story_id = self._save_to_database(rpg_framework, stages_list, requirement_id)
-            if story_id:
-                print(f"✅ 成功生成并保存，故事ID: {story_id}")
-                
+            print(f"✅ 成功生成RPG框架，准备传递给Stage3")
             return rpg_framework, stages_list
             
         except Exception as e:
@@ -337,7 +334,8 @@ class SceneGenerator:
             
             # 获取当前索引
             try:
-                current_index = self.redis_client.get(index_key)
+                # TODO: 数据库查询替代 Redis
+                current_index = None
                 story_list = json.loads(current_index) if current_index else []
             except:
                 story_list = []
@@ -352,19 +350,18 @@ class SceneGenerator:
             })
             
             # 保存更新的索引
-            self.redis_client.set(index_key, json.dumps(story_list, ensure_ascii=False))
+            # TODO: 数据库保存替代 Redis
+            pass
             
         except Exception as e:
             print(f"❌ 更新故事索引失败: {e}")
     
     def get_story_by_id(self, story_id: str) -> Optional[Dict]:
         """根据ID获取完整故事数据"""
-        if not self.redis_client:
-            return None
-            
+        # TODO: 数据库查询替代 Redis
         try:
-            key = f"eduagent:stories:{story_id}"
-            data = self.redis_client.get(key)
+            # key = f"eduagent:stories:{story_id}"
+            data = None  # 暂时返回 None
             if not data:
                 return None
                 
@@ -375,12 +372,10 @@ class SceneGenerator:
     
     def list_all_stories(self) -> List[Dict]:
         """列出所有故事"""
-        if not self.redis_client:
-            return []
-            
+        # TODO: 数据库查询替代 Redis
         try:
-            index_key = "eduagent:story_index"
-            data = self.redis_client.get(index_key)
+            # index_key = "eduagent:story_index"
+            data = None  # 暂时返回空列表
             if not data:
                 return []
                 
@@ -412,36 +407,47 @@ class SceneGenerator:
             
         collected_info = stage1_data.get('collected_info', {})
         
-        # 生成所有关卡的故事板
-        print(f"\n🎬 开始生成 {len(stages_list)} 个关卡的故事板...")
-        storyboards_list = []
-        
+        # 并行生成所有关卡的故事板
+        print(f"\n🚀 开始并行生成 {len(stages_list)} 个关卡的故事板...")
+
+        # 准备并行处理的参数
+        args_list = []
         for i, stage_data in enumerate(stages_list):
-            print(f"\n🎬 生成第 {i+1}/{len(stages_list)} 个关卡的分镜...")
-            print(f"关卡名称: {stage_data.get('关卡名称', f'关卡{i+1}')}")
-            
-            # 生成单个关卡的故事板
-            storyboard_data = self._generate_single_storyboard(
-                rpg_framework, 
+            args = (
+                i,
                 stage_data,
+                rpg_framework,
                 collected_info.get('subject', '未知'),
                 collected_info.get('grade', '未知'),
                 ', '.join(collected_info.get('interaction_requirements', []))
             )
-            
-            if storyboard_data:
-                storyboard_with_meta = {
-                    "stage_index": i + 1,
-                    "stage_name": stage_data.get("关卡名称", f"关卡{i+1}"),
-                    "stage_id": stage_data.get("关卡编号", f"node_{i+1}"),
-                    "storyboard": storyboard_data
-                }
-                storyboards_list.append(storyboard_with_meta)
-                print(f"✅ 第 {i+1} 个关卡分镜生成成功")
-            else:
-                print(f"❌ 第 {i+1} 个关卡分镜生成失败")
-                
-        print(f"\n📊 故事板生成完成: {len(storyboards_list)}/{len(stages_list)} 个关卡成功")
+            args_list.append(args)
+
+        # 使用ThreadPoolExecutor进行并行处理
+        storyboards_list = []
+        max_workers = min(5, len(stages_list))  # 最多5个并行线程，或关卡数量
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_index = {
+                executor.submit(self._generate_single_storyboard_parallel, args): args[0]
+                for args in args_list
+            }
+
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    result = future.result()
+                    if result:
+                        storyboards_list.append(result)
+                except Exception as exc:
+                    print(f"❌ 关卡 {index+1} 处理异常: {exc}")
+
+        # 按stage_index排序，确保顺序正确
+        storyboards_list.sort(key=lambda x: x['stage_index'])
+
+        print(f"\n📊 故事板并行生成完成: {len(storyboards_list)}/{len(stages_list)} 个关卡成功")
         
         return rpg_framework, stages_list, storyboards_list
     
@@ -497,7 +503,7 @@ class SceneGenerator:
         try:
             # 清理响应内容
             cleaned_output = raw_response.strip()
-            
+
             # 移除markdown代码块标记
             if cleaned_output.startswith("```json"):
                 cleaned_output = cleaned_output[7:]
@@ -505,12 +511,12 @@ class SceneGenerator:
                 cleaned_output = cleaned_output[3:]
             if cleaned_output.endswith("```"):
                 cleaned_output = cleaned_output[:-3]
-                
+
             cleaned_output = cleaned_output.strip()
-            
+
             # 解析JSON
             return json.loads(cleaned_output)
-            
+
         except json.JSONDecodeError as e:
             print(f"❌ 故事板JSON解析失败: {e}")
             print(f"原始响应前200字符: {raw_response[:200]}")
@@ -518,6 +524,56 @@ class SceneGenerator:
         except Exception as e:
             print(f"❌ 解析故事板响应失败: {e}")
             return None
+
+    def _generate_single_storyboard_parallel(self, args: tuple) -> Optional[Dict]:
+        """并行处理单个故事板生成的包装函数"""
+        i, stage_data, rpg_framework, subject, grade, interaction_requirements = args
+        stage_name = stage_data.get('关卡名称', f'关卡{i+1}')
+
+        print(f"🎬 [线程{i+1}] 开始生成故事板: {stage_name}")
+
+        # 添加重试机制
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    print(f"🔄 [线程{i+1}] 第 {attempt+1} 次尝试生成故事板...")
+
+                # 生成单个关卡的故事板
+                storyboard_data = self._generate_single_storyboard(
+                    rpg_framework,
+                    stage_data,
+                    subject,
+                    grade,
+                    interaction_requirements
+                )
+
+                if storyboard_data:
+                    storyboard_with_meta = {
+                        "stage_index": i + 1,
+                        "stage_name": stage_name,
+                        "stage_id": stage_data.get("关卡编号", f"node_{i+1}"),
+                        "storyboard": storyboard_data
+                    }
+                    print(f"✅ [线程{i+1}] 关卡《{stage_name}》故事板生成成功")
+                    return storyboard_with_meta
+                else:
+                    if attempt < max_retries:
+                        print(f"⚠️ [线程{i+1}] 故事板生成失败，准备重试...")
+                        continue
+                    else:
+                        print(f"❌ [线程{i+1}] 关卡《{stage_name}》故事板生成失败，已达最大重试次数")
+                        return None
+
+            except Exception as e:
+                if attempt < max_retries:
+                    print(f"⚠️ [线程{i+1}] 故事板生成异常: {e}，准备重试...")
+                    continue
+                else:
+                    print(f"❌ [线程{i+1}] 关卡《{stage_name}》故事板生成异常: {e}，已达最大重试次数")
+                    return None
+
+        return None
 
 
 # Stage3 故事板生成prompt（剧情驱动版本）
@@ -752,11 +808,9 @@ def test_rpg_generation(requirement_id: str = None):
 
     if not requirement_id:
         # 如果没有指定ID，获取最新的
-        if not generator.redis_client:
-            print("❌ Redis连接失败")
-            return
-
-        keys = generator.redis_client.keys("eduagent:requirements:requirement_*")
+        # TODO: 数据库查询替代 Redis
+        print("⚠️ 测试函数需要更新为数据库查询")
+        return
         if not keys:
             print("❌ 没有找到任何Stage1数据")
             return
@@ -792,11 +846,9 @@ def test_complete_generation(requirement_id: str = None):
 
     if not requirement_id:
         # 如果没有指定ID，获取最新的
-        if not generator.redis_client:
-            print("❌ Redis连接失败")
-            return
-
-        keys = generator.redis_client.keys("eduagent:requirements:requirement_*")
+        # TODO: 数据库查询替代 Redis
+        print("⚠️ 测试函数需要更新为数据库查询")
+        return
         if not keys:
             print("❌ 没有找到任何Stage1数据")
             return

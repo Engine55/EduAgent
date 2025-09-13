@@ -12,6 +12,10 @@ import psycopg2
 from datetime import datetime
 from typing import Dict, Any, Optional
 from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# 加载环境变量（从项目根目录）
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class DatabaseClient:
     """数据库客户端，直接操作 PostgreSQL"""
