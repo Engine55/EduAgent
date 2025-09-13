@@ -10,7 +10,8 @@ typing-extensions>=4.0.0
 python-dotenv
 
 # Database
-upstash-redis
+psycopg2-binary
+# upstash-redis  # 保留用于数据迁移
 
 # Web scraping
 requests

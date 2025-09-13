@@ -9,8 +9,10 @@
 
 import json
 import os
+import asyncio
+import concurrent.futures
 from datetime import datetime
-from upstash_redis import Redis
+from database_client import db_client
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -292,17 +294,6 @@ def clean_and_parse_json(raw_output):
         return None
 
 
-def connect_redis():
-    """连接Redis"""
-    try:
-        redis = Redis(
-            url=os.getenv("UPSTASH_REDIS_URL"),
-            token=os.getenv("UPSTASH_REDIS_TOKEN")
-        )
-        return redis
-    except Exception as e:
-        print(f"❌ Redis连接失败: {e}")
-        return None
 
 
 def get_story_data(redis_client, story_id=None):
@@ -364,18 +355,18 @@ def get_stage1_data(redis_client, requirement_id=None):
 
 def generate_all_storyboards(story_id=None):
     """为指定故事生成所有关卡的分镜"""
-    # 连接Redis
-    redis_client = connect_redis()
-    if not redis_client:
+    # 使用数据库客户端
+    if not db_client:
+        print("❌ 数据库连接失败")
         return
     
     # 获取故事数据
-    story_data = get_story_data(redis_client, story_id)
+    story_data = get_story_data(story_id)
     if not story_data:
         return
     
     # 获取第一阶段数据（包含collected_info）
-    stage1_data = get_stage1_data(redis_client)
+    stage1_data = get_stage1_data()
     if not stage1_data:
         print("⚠️ 未找到第一阶段数据，使用默认值")
         collected_info = {}

@@ -11,7 +11,7 @@ import os
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
-from upstash_redis import Redis
+from database_client import db_client
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -156,36 +156,24 @@ class SceneGenerator:
         """初始化场景生成器"""
         self.model_name = model_name
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.redis_client = self._connect_redis()
+        self.db_client = db_client
 
     def _get_stage1_data(self, requirement_id: str) -> Optional[Dict]:
-        """从Redis获取Stage1数据"""
-        if not self.redis_client:
+        """从数据库获取Stage1数据"""
+        if not self.db_client:
             return None
 
         try:
-            key = f"eduagent:requirements:{requirement_id}"
-            data = self.redis_client.get(key)
-            if not data:
-                print(f"❌ 未找到数据: {key}")
+            result = self.db_client.get_requirement(requirement_id)
+            if not result.get('success'):
+                print(f"❌ 未找到数据: {requirement_id}")
                 return None
 
-            return json.loads(data)
+            return result.get('data')
         except Exception as e:
             print(f"❌ 获取Stage1数据失败: {e}")
             return None
 
-    def _connect_redis(self) -> Optional[Redis]:
-        """连接Redis"""
-        try:
-            redis = Redis(
-                url=os.getenv("UPSTASH_REDIS_URL"),
-                token=os.getenv("UPSTASH_REDIS_TOKEN")
-            )
-            return redis
-        except Exception as e:
-            print(f"❌ Redis连接失败: {e}")
-            return None
     
     def generate_rpg_framework(self, requirement_id: str) -> Tuple[Optional[Dict], Optional[List[Dict]]]:
         """
@@ -198,7 +186,7 @@ class SceneGenerator:
             Tuple[rpg_framework, stages_list]: (RPG框架字典, 关卡列表)
         """
         try:
-            # 从Redis获取Stage1数据
+            # 从数据库获取Stage1数据
             stage1_data = self._get_stage1_data(requirement_id)
             if not stage1_data:
                 print(f"❌ 未找到需求数据: {requirement_id}")
@@ -216,8 +204,8 @@ class SceneGenerator:
                 print("❌ 数据解析失败")
                 return None, None
                 
-            # 保存到Redis
-            story_id = self._save_to_redis(rpg_framework, stages_list)
+            # 保存到数据库
+            story_id = self._save_to_database(rpg_framework, stages_list, requirement_id)
             if story_id:
                 print(f"✅ 成功生成并保存，故事ID: {story_id}")
                 
@@ -308,9 +296,9 @@ class SceneGenerator:
             print(f"❌ 解析响应失败: {e}")
             return None, None
     
-    def _save_to_redis(self, rpg_framework: Dict, stages_list: List[Dict]) -> Optional[str]:
-        """保存RPG框架和关卡数据到Redis"""
-        if not self.redis_client:
+    def _save_to_database(self, rpg_framework: Dict, stages_list: List[Dict], requirement_id: str) -> Optional[str]:
+        """保存RPG框架和关卡数据到数据库"""
+        if not self.db_client:
             return None
             
         try:
@@ -321,6 +309,7 @@ class SceneGenerator:
             # 构建保存数据
             story_data = {
                 "story_id": story_id,
+                "requirement_id": requirement_id,
                 "timestamp": timestamp,
                 "status": "stage2_complete",
                 "rpg_framework": rpg_framework,
@@ -328,32 +317,17 @@ class SceneGenerator:
                 "total_stages": len(stages_list)
             }
             
-            # 保存主数据
-            main_key = f"eduagent:stories:{story_id}"
-            self.redis_client.set(main_key, json.dumps(story_data, ensure_ascii=False))
+            # 保存到数据库
+            result = self.db_client.save_story(story_id, requirement_id, story_data)
             
-            # 保存RPG框架（单独索引）
-            rpg_key = f"eduagent:rpg_frameworks:{story_id}"
-            self.redis_client.set(rpg_key, json.dumps(rpg_framework, ensure_ascii=False))
-            
-            # 保存每个关卡数据（单独索引）
-            for i, stage in enumerate(stages_list):
-                stage_key = f"eduagent:stages:{story_id}:stage_{i+1}"
-                stage_data_with_meta = {
-                    "story_id": story_id,
-                    "stage_index": i+1,
-                    "stage_data": stage,
-                    "timestamp": timestamp
-                }
-                self.redis_client.set(stage_key, json.dumps(stage_data_with_meta, ensure_ascii=False))
-            
-            # 更新索引列表
-            self._update_story_index(story_id, rpg_framework, stages_list, timestamp)
-            
-            return story_id
+            if result.get('success'):
+                return story_id
+            else:
+                print(f"❌ 保存到数据库失败: {result.get('error')}")
+                return None
             
         except Exception as e:
-            print(f"❌ 保存到Redis失败: {e}")
+            print(f"❌ 保存到数据库失败: {e}")
             return None
     
     def _update_story_index(self, story_id: str, rpg_framework: Dict, stages_list: List[Dict], timestamp: str):

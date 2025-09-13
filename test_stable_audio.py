@@ -24,7 +24,7 @@ class StableAudioTester:
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "audio/*"
         }
         
     def generate_audio(self, 
@@ -60,6 +60,8 @@ class StableAudioTester:
         
         if seed is not None:
             payload["seed"] = seed
+        else:
+            payload["seed"] = int(datetime.now().timestamp() * 1000) % 1000000
             
         print(f"🎵 开始生成音频...")
         print(f"📝 提示词: {prompt}")
@@ -70,9 +72,10 @@ class StableAudioTester:
             response = requests.post(url, headers=self.headers, json=payload)
             response.raise_for_status()
             
-            result = response.json()
-            print(f"✅ 音频生成成功!")
-            return result
+            # 直接获取音频数据
+            audio_data = response.content
+            print(f"✅ 音频生成成功! 大小: {len(audio_data)} bytes")
+            return {"audio_data": audio_data}
             
         except requests.exceptions.RequestException as e:
             print(f"❌ API请求失败: {e}")
@@ -84,20 +87,20 @@ class StableAudioTester:
                     print(f"响应内容: {e.response.text}")
             return {"error": str(e)}
     
-    def save_audio(self, audio_data: str, filename: str) -> bool:
+    def save_audio(self, audio_data: bytes, filename: str) -> bool:
         """
-        保存base64编码的音频到文件
+        保存音频数据到文件
         
         Args:
-            audio_data: base64编码的音频数据
+            audio_data: 原始音频数据（bytes）
             filename: 保存的文件名（自动添加.mp3扩展名）
             
         Returns:
             是否保存成功
         """
         try:
-            # 解码base64数据
-            audio_bytes = base64.b64decode(audio_data)
+            # 直接使用音频字节数据
+            audio_bytes = audio_data
             
             # 确保输出目录存在
             os.makedirs("generated_audio", exist_ok=True)
@@ -153,10 +156,10 @@ class StableAudioTester:
                 duration_seconds=scene['duration']
             )
             
-            if "error" not in result and "audio" in result:
+            if "error" not in result and "audio_data" in result:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"{scene['name']}_{timestamp}.mp3"
-                self.save_audio(result["audio"], filename)
+                self.save_audio(result["audio_data"], filename)
             else:
                 print(f"❌ 场景 {scene['name']} 生成失败")
     
@@ -192,10 +195,10 @@ class StableAudioTester:
                 duration_seconds=prompt_data['duration']
             )
             
-            if "error" not in result and "audio" in result:
+            if "error" not in result and "audio_data" in result:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"edu_{prompt_data['name']}_{timestamp}.mp3"
-                self.save_audio(result["audio"], filename)
+                self.save_audio(result["audio_data"], filename)
             else:
                 print(f"❌ 教育音频 {prompt_data['name']} 生成失败")
 

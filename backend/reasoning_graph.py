@@ -5,7 +5,7 @@ from typing import Dict
 import json
 import hashlib
 from datetime import datetime
-from upstash_redis import Redis
+from database_client import db_client
 
 
 class Stage1ReasoningGraph:
@@ -56,16 +56,13 @@ class Stage1ReasoningGraph:
         from prompt_templates import PromptTemplates
         self.prompts = PromptTemplates()
         
-        # 初始化Redis连接
+        # 初始化数据库连接
         try:
-            self.redis = Redis(
-                url=os.getenv("UPSTASH_REDIS_URL"),
-                token=os.getenv("UPSTASH_REDIS_TOKEN")
-            )
-            print("✅ Redis连接成功")
+            self.db_client = db_client
+            print("✅ 数据库连接成功")
         except Exception as e:
-            print(f"❌ Redis连接失败: {e}")
-            self.redis = None
+            print(f"❌ 数据库连接失败: {e}")
+            self.db_client = None
 
     async def process_conversation_turn(self, user_input: str) -> Dict:
         """处理一轮对话的完整流程"""
@@ -432,10 +429,10 @@ class Stage1ReasoningGraph:
         }
 
     def _format_final_requirements(self) -> str:
-        """格式化最终需求为易读文本并保存到Redis"""
+        """格式化最终需求为易读文本并保存到数据库"""
         
-        # 保存到Redis
-        self._save_requirements_to_redis()
+        # 保存到数据库
+        self._save_requirements_to_database()
         
         sections = []
 
@@ -473,10 +470,10 @@ class Stage1ReasoningGraph:
 
         return "\n".join(sections)
     
-    def _save_requirements_to_redis(self):
-        """将最终需求保存到Upstash Redis"""
-        if not self.redis:
-            print("⚠️ Redis未连接，跳过保存")
+    def _save_requirements_to_database(self):
+        """将最终需求保存到数据库"""
+        if not self.db_client:
+            print("⚠️ 数据库未连接，跳过保存")
             return
             
         try:
@@ -488,7 +485,7 @@ class Stage1ReasoningGraph:
             # 准备保存的数据
             requirement_data = {
                 "id": requirement_id,
-                "user_id": "1",  # 添加用户ID
+                "user_id": self.user_id,
                 "timestamp": timestamp,
                 "collected_info": self.collected_info,
                 "summary": {
@@ -503,29 +500,25 @@ class Stage1ReasoningGraph:
                 }
             }
             
-            # 保存到Redis
-            key = f"eduagent:requirements:{requirement_id}"
-            self.redis.set(key, json.dumps(requirement_data, ensure_ascii=False))
-            self.redis.expire(key, 2592000)  # 30天过期
+            # 保存到数据库
+            result = self.db_client.save_requirement(requirement_id, self.user_id, requirement_data)
             
-            # 添加到索引（按日期）
-            date_key = f"eduagent:requirements:index:{datetime.now().strftime('%Y-%m-%d')}"
-            self.redis.sadd(date_key, requirement_id)
-            self.redis.expire(date_key, 2592000)  # 30天过期
-            
-            print(f"✅ 需求数据已保存到Redis: {requirement_id}")
-            
+            if result.get('success'):
+                print(f"✅ 需求数据已保存到数据库: {requirement_id}")
+            else:
+                print(f"❌ 保存到数据库失败: {result.get('error')}")
+                
         except Exception as e:
-            print(f"❌ 保存到Redis失败: {e}")
+            print(f"❌ 保存到数据库失败: {e}")
 
     def save_final_requirements(self) -> Dict:
-        """保存最终收集的需求信息到Redis"""
+        """保存最终收集的需求信息到数据库"""
         try:
-            # 检查Redis连接
-            if not self.redis:
+            # 检查数据库连接
+            if not self.db_client:
                 return {
                     "success": False,
-                    "message": "Redis未连接，无法保存",
+                    "message": "数据库未连接，无法保存",
                     "timestamp": self._get_current_timestamp()
                 }
             
@@ -552,24 +545,25 @@ class Stage1ReasoningGraph:
                 }
             }
             
-            # 保存到Redis
-            key = f"eduagent:requirements:{requirement_id}"
-            self.redis.set(key, json.dumps(requirement_data, ensure_ascii=False))
-            self.redis.expire(key, 2592000)  # 30天过期
+            # 保存到数据库
+            result = self.db_client.save_requirement(requirement_id, self.user_id, requirement_data)
             
-            # 添加到索引（按日期）
-            date_key = f"eduagent:requirements:index:{datetime.now().strftime('%Y-%m-%d')}"
-            self.redis.sadd(date_key, requirement_id)
-            self.redis.expire(date_key, 2592000)  # 30天过期
-            
-            return {
-                "success": True,
-                "message": f"需求信息保存成功: {requirement_id}",
-                "requirement_id": requirement_id,
-                "saved_fields": list(k for k, v in self.collected_info.items() if v),
-                "total_fields": len([v for v in self.collected_info.values() if v]),
-                "timestamp": timestamp
-            }
+            if result.get('success'):
+                return {
+                    "success": True,
+                    "message": f"需求信息保存成功: {requirement_id}",
+                    "requirement_id": requirement_id,
+                    "saved_fields": list(k for k, v in self.collected_info.items() if v),
+                    "total_fields": len([v for v in self.collected_info.values() if v]),
+                    "timestamp": timestamp
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"保存失败: {result.get('error')}",
+                    "error": result.get('error'),
+                    "timestamp": self._get_current_timestamp()
+                }
             
         except Exception as e:
             return {
