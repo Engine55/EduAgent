@@ -180,7 +180,6 @@ export default function StoryboardPage() {
         zoomOnDoubleClick={true}
         minZoom={0.1}
         maxZoom={4}
-        defaultZoom={1}
       >
         <Controls />
         <Background color="#aaa" gap={16} />
