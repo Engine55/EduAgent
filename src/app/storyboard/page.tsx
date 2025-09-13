@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import JSZip from 'jszip'
 import ReactFlow, {
   Node,
   Edge,
@@ -51,7 +52,11 @@ interface StoryData {
     storyboard: StoryboardData
     teachingGoal?: string
     // 新增：预生成的内容
-    generated_image_url?: string
+    generated_image_data?: {
+      base64_data: string
+      file_extension: string
+      original_url: string
+    }
     generated_dialogue?: string
     generation_status?: {
       storyboard: 'success' | 'failed'
@@ -65,11 +70,114 @@ export default function StoryboardPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [isLoading, setIsLoading] = useState(true)
+  const [storyData, setStoryData] = useState<StoryData | null>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges],
   )
+
+  const downloadStoryboardPackage = async () => {
+    if (!storyData) return
+
+    setIsDownloading(true)
+    try {
+      const zip = new JSZip()
+      
+      // 为每个分镜创建文件夹和文件
+      for (const storyboard of storyData.storyboards) {
+        const folderName = `scene_${storyboard.stage_id}_${storyboard.stage_name}`
+        const sceneFolder = zip.folder(folderName)
+        
+        if (!sceneFolder) continue
+
+        // 1. 对话文件
+        if (storyboard.generated_dialogue) {
+          const dialogueContent = `场景：${storyboard.stage_name}\n` +
+            `学科：${storyData.subject || '未知'} (${storyData.grade || '未知'}年级)\n` +
+            `生成时间：${new Date().toLocaleString()}\n` +
+            `\n${'='.repeat(50)}\n\n` +
+            storyboard.generated_dialogue
+          sceneFolder.file('对话.txt', dialogueContent)
+        }
+
+        // 2. 剧本文件
+        if (storyboard.storyboard.剧本) {
+          const scriptContent = `场景：${storyboard.stage_name}\n` +
+            `分镜编号：${storyboard.storyboard.分镜基础信息?.分镜编号 || storyboard.stage_id}\n` +
+            `场景类型：${storyboard.storyboard.分镜基础信息?.场景类型 || '未知'}\n` +
+            `时长估计：${storyboard.storyboard.分镜基础信息?.时长估计 || '未知'}\n` +
+            `\n${'='.repeat(50)}\n\n` +
+            `【旁白】\n${storyboard.storyboard.剧本.旁白 || ''}\n\n` +
+            `【情节描述】\n${storyboard.storyboard.剧本.情节描述 || ''}\n\n` +
+            `【互动设计】\n${storyboard.storyboard.剧本.互动设计 || ''}`
+          sceneFolder.file('剧本.txt', scriptContent)
+        }
+
+        // 3. 角色介绍文件
+        if (storyboard.storyboard.人物档案) {
+          const charactersContent = `场景：${storyboard.stage_name}\n` +
+            `角色介绍\n` +
+            `${'='.repeat(50)}\n\n` +
+            `【主角】\n` +
+            `角色名：${storyboard.storyboard.人物档案.主角?.角色名 || '未知'}\n` +
+            `外貌：${storyboard.storyboard.人物档案.主角?.外貌 || '未描述'}\n` +
+            `性格：${storyboard.storyboard.人物档案.主角?.性格 || '未描述'}\n` +
+            `当前状态：${storyboard.storyboard.人物档案.主角?.当前状态 || '未描述'}\n\n` +
+            `【NPC】\n` +
+            `角色名：${storyboard.storyboard.人物档案.NPC?.角色名 || '未知'}\n` +
+            `外貌：${storyboard.storyboard.人物档案.NPC?.外貌 || '未描述'}\n` +
+            `性格：${storyboard.storyboard.人物档案.NPC?.性格 || '未描述'}\n` +
+            `当前状态：${storyboard.storyboard.人物档案.NPC?.当前状态 || '未描述'}\n` +
+            `与主角关系：${storyboard.storyboard.人物档案.NPC?.与主角关系 || '未描述'}`
+          sceneFolder.file('角色介绍.txt', charactersContent)
+        }
+
+        // 4. 图片文件（如果有的话）
+        if (storyboard.generated_image_data) {
+          try {
+            // 从base64数据创建图片文件
+            const base64Data = storyboard.generated_image_data.base64_data
+            const fileExtension = storyboard.generated_image_data.file_extension
+            const fileName = `图片.${fileExtension}`
+            
+            // 将base64转换为二进制数据
+            const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
+            
+            sceneFolder.file(fileName, binaryData)
+            console.log(`✅ 添加图片文件: ${fileName}`)
+          } catch (error) {
+            console.error(`处理图片数据失败 ${storyboard.stage_id}:`, error)
+            // 创建一个备用说明文件
+            sceneFolder.file('图片_说明.txt', '图片数据处理失败，请联系技术支持')
+          }
+        }
+      }
+
+      // 生成并下载ZIP文件
+      const content = await zip.generateAsync({ type: 'blob' })
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const fileName = `故事板_${storyData.story_title || '未命名'}_${timestamp}.zip`
+      
+      // 创建下载链接
+      const url = URL.createObjectURL(content)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      console.log('✅ 故事板包下载完成')
+    } catch (error) {
+      console.error('下载失败:', error)
+      alert('下载失败，请稍后重试')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   useEffect(() => {
     async function loadStoryboard() {
@@ -82,12 +190,13 @@ export default function StoryboardPage() {
         }
         
         console.log('📊 使用生成的故事板数据')
-        const storyData: StoryData = JSON.parse(generatedData)
+        const parsedStoryData: StoryData = JSON.parse(generatedData)
+        setStoryData(parsedStoryData)
         
         const newNodes: Node[] = []
         const newEdges: Edge[] = []
         
-        storyData.storyboards.forEach((storyboard, index) => {
+        parsedStoryData.storyboards.forEach((storyboard, index) => {
           const nodeData = {
             sceneName: storyboard.stage_name,
             stageId: storyboard.stage_id,
@@ -97,10 +206,12 @@ export default function StoryboardPage() {
             imagePrompt: storyboard.storyboard.图片提示词 || '',
             sceneInfo: storyboard.storyboard.分镜基础信息,
             teachingGoal: storyboard.teachingGoal,
-            subject: storyData.subject,
-            grade: storyData.grade,
+            subject: parsedStoryData.subject,
+            grade: parsedStoryData.grade,
             // 新增：预生成的内容
-            preGeneratedImageUrl: storyboard.generated_image_url,
+            preGeneratedImageUrl: storyboard.generated_image_data ? 
+              `data:image/${storyboard.generated_image_data.file_extension};base64,${storyboard.generated_image_data.base64_data}` : 
+              undefined,
             preGeneratedDialogue: storyboard.generated_dialogue,
             generationStatus: storyboard.generation_status,
           }
@@ -157,14 +268,30 @@ export default function StoryboardPage() {
 
   return (
     <div style={{ width: '100vw', height: '100vh' }} className="relative">
-      {/* 返回首页按钮 */}
-      <div className="absolute top-4 left-4 z-10">
+      {/* 顶部按钮组 */}
+      <div className="absolute top-4 left-4 z-10 flex gap-3">
         <Link 
           href="/"
           className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-semibold shadow-lg"
         >
           ← 返回首页
         </Link>
+        <button
+          onClick={downloadStoryboardPackage}
+          disabled={isDownloading || !storyData}
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors font-semibold shadow-lg flex items-center gap-2"
+        >
+          {isDownloading ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              打包中...
+            </>
+          ) : (
+            <>
+              📦 下载故事板包
+            </>
+          )}
+        </button>
       </div>
       <ReactFlow
         nodes={nodes}

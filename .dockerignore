@@ -1,0 +1,61 @@
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.example
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Frontend files (只部署backend)
+src/
+public/
+.next/
+out/
+package.json
+package-lock.json
+tsconfig.json
+tailwind.config.js
+next.config.js
+
+# Documentation
+README.md
+*.md
+
+# Temp files
+*.log
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Build artifacts
+dist/
+build/
+
+# Database files
+*.sqlite
+*.db
+
+# Other
+.dockerignore
+Dockerfile

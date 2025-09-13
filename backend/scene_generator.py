@@ -11,6 +11,7 @@ import os
 import uuid
 import concurrent.futures
 import requests
+import base64
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 from database_client import db_client
@@ -653,7 +654,7 @@ class SceneGenerator:
             print(f"❌ AI修复JSON失败: {e}")
             return None
 
-    def _generate_image(self, image_prompt: Dict, stage_id: str) -> Optional[str]:
+    def _generate_image(self, image_prompt: Dict, stage_id: str) -> Optional[Dict[str, str]]:
         """生成单个关卡的图像"""
         try:
             # 构建完整的提示词
@@ -694,8 +695,39 @@ class SceneGenerator:
                 data = response.json()
                 image_url = data.get('data', [{}])[0].get('url')
                 if image_url:
-                    print(f"✅ {stage_id} 图像生成成功")
-                    return image_url
+                    print(f"🎨 {stage_id} 图像URL获取成功，正在下载...")
+                    
+                    # 下载图片文件
+                    try:
+                        image_response = requests.get(image_url, timeout=30)
+                        if image_response.status_code == 200:
+                            # 获取图片数据
+                            image_content = image_response.content
+                            
+                            # 确定文件扩展名
+                            content_type = image_response.headers.get('content-type', '').lower()
+                            if 'png' in content_type:
+                                file_ext = 'png'
+                            elif 'jpeg' in content_type or 'jpg' in content_type:
+                                file_ext = 'jpg'
+                            else:
+                                file_ext = 'png'  # 默认
+                            
+                            # 转换为base64
+                            image_base64 = base64.b64encode(image_content).decode('utf-8')
+                            
+                            print(f"✅ {stage_id} 图像下载并转换成功 ({len(image_content)} bytes)")
+                            return {
+                                'base64_data': image_base64,
+                                'file_extension': file_ext,
+                                'original_url': image_url
+                            }
+                        else:
+                            print(f"❌ {stage_id} 图像下载失败：{image_response.status_code}")
+                            return None
+                    except Exception as download_error:
+                        print(f"❌ {stage_id} 图像下载异常: {download_error}")
+                        return None
                 else:
                     print(f"❌ {stage_id} 图像生成失败：未返回图片URL")
                     return None
@@ -804,7 +836,7 @@ class SceneGenerator:
                 print(f"🚀 [线程{i+1}] 步骤2/3: 并行生成图像和对话...")
 
                 # 使用嵌套的ThreadPoolExecutor进行子并行处理
-                image_url = None
+                image_data = None
                 generated_dialogue = None
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as sub_executor:
@@ -827,7 +859,7 @@ class SceneGenerator:
                     # 等待两个任务完成
                     if image_future:
                         try:
-                            image_url = image_future.result(timeout=120)  # 2分钟超时
+                            image_data = image_future.result(timeout=120)  # 2分钟超时
                         except Exception as e:
                             print(f"⚠️ [线程{i+1}] 图像生成失败: {e}")
 
@@ -843,11 +875,11 @@ class SceneGenerator:
                     "stage_name": stage_name,
                     "stage_id": stage_id,
                     "storyboard": storyboard_data,
-                    "generated_image_url": image_url,
+                    "generated_image_data": image_data,  # 现在包含base64和文件扩展名
                     "generated_dialogue": generated_dialogue,
                     "generation_status": {
                         "storyboard": "success",
-                        "image": "success" if image_url else "failed",
+                        "image": "success" if image_data else "failed",
                         "dialogue": "success" if generated_dialogue else "failed"
                     }
                 }

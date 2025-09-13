@@ -429,10 +429,9 @@ class Stage1ReasoningGraph:
         }
 
     def _format_final_requirements(self) -> str:
-        """格式化最终需求为易读文本并保存到数据库"""
-        
-        # 保存到数据库
-        self._save_requirements_to_database()
+        """格式化最终需求为易读文本"""
+
+        # 注意：数据库保存将在 save_final_requirements() 中统一执行
         
         sections = []
 
@@ -469,48 +468,6 @@ class Stage1ReasoningGraph:
             sections.append(f"  互动方式：{interactions}")
 
         return "\n".join(sections)
-    
-    def _save_requirements_to_database(self):
-        """将最终需求保存到数据库"""
-        if not self.db_client:
-            print("⚠️ 数据库未连接，跳过保存")
-            return
-            
-        try:
-            # 生成唯一ID
-            timestamp = datetime.now().isoformat()
-            content_hash = hashlib.md5(json.dumps(self.collected_info, sort_keys=True).encode()).hexdigest()[:8]
-            requirement_id = f"requirement_{timestamp}_{content_hash}"
-            
-            # 准备保存的数据
-            requirement_data = {
-                "id": requirement_id,
-                "user_id": self.user_id,
-                "timestamp": timestamp,
-                "collected_info": self.collected_info,
-                "summary": {
-                    "subject": self.collected_info.get("subject"),
-                    "grade": self.collected_info.get("grade"),
-                    "knowledge_points_count": len(self.collected_info.get("knowledge_points", [])),
-                    "completion_status": "completed"
-                },
-                "metadata": {
-                    "total_fields_collected": sum(1 for v in self.collected_info.values() if v),
-                    "stages_completed": ["basic_info", "teaching_info", "gamestyle_info", "scene_info"]
-                }
-            }
-            
-            # 保存到数据库
-            result = self.db_client.save_requirement(requirement_id, self.user_id, requirement_data)
-            
-            if result.get('success'):
-                print(f"✅ 需求数据已保存到数据库: {requirement_id}")
-            else:
-                print(f"❌ 保存到数据库失败: {result.get('error')}")
-                
-        except Exception as e:
-            print(f"❌ 保存到数据库失败: {e}")
-
     def save_final_requirements(self) -> Dict:
         """保存最终收集的需求信息到数据库"""
         try:
