@@ -3,6 +3,7 @@ import { Handle, Position } from 'reactflow'
 
 interface NodeData {
   sceneName: string
+  stageId: string
   characters: {
     主角?: {
       角色名: string
@@ -197,7 +198,7 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       
       {/* 节点标题 */}
       <div className="p-3 border-b border-gray-200">
-        <h3 className="text-lg font-bold text-purple-700 mb-1">{data.sceneName}</h3>
+        <h3 className="text-lg font-bold text-purple-700 mb-1">{data.stageId}-{data.sceneName}</h3>
         <p className="text-xs text-gray-600">{data.sceneInfo.场景类型} | {data.sceneInfo.时长估计}</p>
       </div>
       

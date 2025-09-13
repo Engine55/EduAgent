@@ -82,6 +82,7 @@ export default function StoryboardPage() {
         storyData.storyboards.forEach((storyboard, index) => {
           const nodeData = {
             sceneName: storyboard.stage_name,
+            stageId: storyboard.stage_id,
             characters: storyboard.storyboard.人物档案,
             dialogue: storyboard.storyboard.人物对话,
             script: storyboard.storyboard.剧本,
