@@ -408,49 +408,99 @@ class PromptTemplates:
             input_variables=["collected_info", "sufficiency_scores", "overall_score", "conversation_context"],
             template=template
         )
-    
+
+    def get_input_fitness_check_prompt(self) -> PromptTemplate:
+        """获取用户输入适宜性检查模板"""
+        template = """你是专业的教育内容审查专家。请检查用户输入的教育游戏设计需求是否合理和适宜。
+
+用户输入：
+{user_input}
+
+当前收集的信息：
+{collected_info}
+
+请从以下维度检查用户输入的适宜性：
+
+1. **逻辑合理性** - 学科和知识点是否匹配（如：语文课教四则运算、负一年级、高三学前班内容等不合理组合）
+2. **难度合理性** - 知识点难度是否与年级水平匹配（如：一年级学微积分、幼儿园学高等数学等超纲内容）
+3. **价值观正确性** - 教学目标是否积极正面（拒绝偷窃、暴力、欺骗等不良内容）
+4. **年龄适宜性** - 内容是否适合目标年龄段（拒绝少儿不宜、恐怖、血腥内容）
+5. **教育合规性** - 是否符合教育法规和道德标准
+6. **引导性检查** - 是否有恶意引导或不当暗示
+
+请以JSON格式返回检查结果：
+{{
+    "input_fitness": "passed",
+    "fitness_score": 85,
+    "issues": [
+        {{
+            "category": "逻辑合理性",
+            "severity": "high",
+            "description": "具体问题描述",
+            "suggestion": "改进建议"
+        }}
+    ],
+    "assessment_summary": "输入内容整体评估"
+}}
+
+检查标准：
+- input_fitness: "passed"(通过) 或 "rejected"(拒绝)
+- high severity: 严重违反常识或道德标准，必须拒绝
+- medium severity: 需要用户澄清或修改
+- low severity: 建议性提醒
+
+请严格按照JSON格式返回结果。"""
+
+        return PromptTemplate(
+            input_variables=["user_input", "collected_info"],
+            template=template
+        )
+
     def get_fitness_check_prompt(self) -> PromptTemplate:
         """获取内容适宜性检查模板"""
         template = """你是专业的教育内容审查专家。请检查以下教育游戏设计需求的适宜性，确保内容适合目标年龄段的学生。
 
-收集的信息：
-{collected_info}
+    收集的信息：
+    {collected_info}
 
-对话上下文：
-{conversation_context}
+    对话上下文：
+    {conversation_context}
 
-请从以下维度检查适宜性：
+    请从以下维度检查适宜性：
 
-1. **年龄适宜性** - 内容是否适合目标年级的学生
-2. **教育价值观** - 是否传递正确的教育价值观
-3. **内容安全性** - 是否包含不当内容（暴力、恐怖、歧视等）
-4. **心理健康** - 是否会对学生心理造成负面影响
-5. **文化敏感性** - 是否尊重不同文化背景
-6. **学习难度** - 游戏难度是否与年级水平匹配
+    1. **年龄适宜性** - 内容是否适合目标年级的学生
+    2. **教育价值观** - 是否传递正确的教育价值观
+    3. **内容安全性** - 是否包含不当内容（暴力、恐怖、歧视等）
+    4. **心理健康** - 是否会对学生心理造成负面影响
+    5. **文化敏感性** - 是否尊重不同文化背景
+    6. **学习难度** - 游戏难度是否与年级水平匹配
 
-请以JSON格式返回检查结果：
-{{
-    "overall_fitness": <"passed" 或 "concerns">,
-    "concerns": [
-        {{
-            "category": "<问题类别>",
-            "severity": "<high/medium/low>",
-            "description": "<具体问题描述>",
-            "suggestion": "<改进建议>"
-        }}
-    ],
-    "positive_aspects": ["<积极方面1>", "<积极方面2>"],
-    "fitness_score": <0-100的适宜性评分>,
-    "assessment_summary": "<整体适宜性总结>"
-}}
+    请以JSON格式返回检查结果，请确保所有值都是具体内容：
+    {{
+        "overall_fitness": "passed",
+        "concerns": [
+            {{
+                "category": "年龄适宜性",
+                "severity": "medium",
+                "description": "具体问题描述",
+                "suggestion": "具体改进建议"
+            }}
+        ],
+        "positive_aspects": ["积极方面1", "积极方面2"],
+        "fitness_score": 85,
+        "assessment_summary": "整体适宜性总结"
+    }}
 
-检查标准：
-- high severity: 严重违反教育原则或安全标准
-- medium severity: 需要调整但不影响整体适宜性  
-- low severity: 建议性改进
+    检查标准：
+    - high severity: 严重违反教育原则或安全标准
+    - medium severity: 需要调整但不影响整体适宜性  
+    - low severity: 建议性改进
 
-请确保返回有效的JSON格式。"""
-        
+    请严格按照上述JSON格式返回，确保：
+    1. overall_fitness 值为 "passed" 或 "concerns" 
+    2. fitness_score 为0-100的数字
+    3. 所有字符串值都填写具体内容，不使用占位符。"""
+
         return PromptTemplate(
             input_variables=["collected_info", "conversation_context"],
             template=template

@@ -34,6 +34,11 @@ class ReasoningState(TypedDict):
     sufficiency_threshold: float         # 阈值 (默认75)
     sufficiency_passed: bool
     
+    # 输入适宜性检查状态
+    input_fitness_result: Dict[str, Any]
+    input_fitness_passed: bool
+    input_fitness_score: int
+    
     # 适宜性检查状态
     fitness_assessment: Dict[str, Any]
     fitness_concerns: List[Dict[str, str]]
@@ -344,6 +349,7 @@ class ReasoningGraph:
         
         # 新流程：Stage1集成的节点
         workflow.add_node("check_info_completed", self._check_info_completed)
+        workflow.add_node("check_input_fitness", self._check_input_fitness)
         workflow.add_node("extract_and_update_info", self._extract_and_update_info)
         workflow.add_node("determine_stage", self._determine_stage)
         workflow.add_node("generate_lack_response", self._generate_lack_response)
@@ -360,8 +366,18 @@ class ReasoningGraph:
         # 设置入口点
         workflow.set_entry_point("check_info_completed")
         
-        # 新流程：总是流转到信息提取
-        workflow.add_edge("check_info_completed", "extract_and_update_info")
+        # 新流程：先检查输入适宜性
+        workflow.add_edge("check_info_completed", "check_input_fitness")
+        
+        # 输入适宜性检查后的条件路由
+        workflow.add_conditional_edges(
+            "check_input_fitness",
+            self._should_proceed_with_input,
+            {
+                "proceed": "extract_and_update_info",
+                "reject": END  # 直接结束，在_check_input_fitness中会添加拒绝消息
+            }
+        )
         
         # 信息提取后流转到阶段判断
         workflow.add_edge("extract_and_update_info", "determine_stage")
@@ -433,8 +449,72 @@ class ReasoningGraph:
             print("✅ 适宜性检查通过，准备完成")
             return "fitness_passed"
     
+    def _should_proceed_with_input(self, state: ReasoningState) -> str:
+        """判断输入是否可以继续处理"""
+        if state["input_fitness_passed"]:
+            return "proceed"
+        else:
+            return "reject"
+    
     # ==================== 新增节点函数 ====================
     
+    async def _check_input_fitness(self, state: ReasoningState) -> ReasoningState:
+        """检查用户输入的适宜性"""
+        print("🛡️ 检查输入适宜性...")
+        
+        # 获取最新的用户输入
+        user_messages = [msg for msg in state["messages"] if msg["role"] == "user"]
+        if not user_messages:
+            print("❌ 没有找到用户输入")
+            state["input_fitness_passed"] = False
+            return state
+            
+        latest_user_input = user_messages[-1]["content"]
+        
+        # 使用LLM进行输入适宜性检查
+        fitness_result = await self._llm_check_input_fitness(latest_user_input, state["collected_info"])
+        
+        # 更新状态
+        state["input_fitness_result"] = fitness_result
+        state["input_fitness_passed"] = fitness_result.get("input_fitness") == "passed"
+        state["input_fitness_score"] = fitness_result.get("fitness_score", 0)
+        
+        if state["input_fitness_passed"]:
+            print("✅ 输入适宜性检查通过")
+        else:
+            issues_count = len(fitness_result.get("issues", []))
+            print(f"❌ 输入适宜性检查未通过，发现{issues_count}个问题")
+            for issue in fitness_result.get("issues", []):
+                print(f"  - {issue.get('category', '未知')}: {issue.get('description', '无描述')}")
+            
+            # 生成拒绝回复
+            rejection_message = self._generate_input_rejection_message(fitness_result)
+            state["messages"].append({
+                "role": "assistant",
+                "content": rejection_message
+            })
+        
+        return state
+
+    def _generate_input_rejection_message(self, fitness_result: Dict[str, Any]) -> str:
+        """生成输入拒绝消息"""
+        issues = fitness_result.get("issues", [])
+        
+        message_parts = ["😔 抱歉，您提到的内容存在一些问题，我无法继续处理："]
+        
+        for issue in issues:
+            category = issue.get("category", "未知问题")
+            description = issue.get("description", "")
+            suggestion = issue.get("suggestion", "")
+            
+            message_parts.append(f"\n• **{category}**: {description}")
+            if suggestion:
+                message_parts.append(f"  建议: {suggestion}")
+        
+        message_parts.append("\n\n🎯 请提供符合教育规范、逻辑合理且适合学生年龄的游戏设计需求。我将很高兴为您设计一个优秀的教育游戏！")
+        
+        return "".join(message_parts)
+
     async def _extract_and_update_info(self, state: ReasoningState) -> ReasoningState:
         """提取并更新用户输入的信息"""
         try:
@@ -646,6 +726,7 @@ class ReasoningGraph:
         # 生成最终确认回复
         final_response = await self._llm_generate_final_response(
             collected_info=state["collected_info"],
+            sufficiency_scores=state["sufficiency_score"],
             conversation_context=self._build_conversation_context(state["messages"])
         )
         
@@ -680,6 +761,36 @@ class ReasoningGraph:
             
         return "\n".join(context_parts)
     
+    async def _llm_check_input_fitness(self, user_input: str, collected_info: Dict[str, Any]) -> Dict[str, Any]:
+        """使用LLM检查用户输入的适宜性"""
+        
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_input_fitness_check_prompt()
+        fitness_prompt = prompt_template.format(
+            user_input=user_input,
+            collected_info=self._format_collected_info_for_assessment(collected_info)
+        )
+
+        try:
+            response = await self.llm.apredict(fitness_prompt)
+            json_content = self._extract_json_from_markdown(response.strip())
+            result = json.loads(json_content)
+            return result
+        except Exception as e:
+            print(f"❌ 输入适宜性检查失败: {e}")
+            # 返回默认拒绝的结果
+            return {
+                "input_fitness": "rejected",
+                "fitness_score": 0,
+                "issues": [{
+                    "category": "系统错误",
+                    "severity": "high",
+                    "description": "适宜性检查过程中出现错误",
+                    "suggestion": "请重新输入或联系管理员"
+                }],
+                "assessment_summary": "系统检查失败，为安全起见拒绝输入"
+            }
+
     async def _llm_assess_sufficiency(self, collected_info: Dict[str, Any], 
                                     conversation_context: str) -> Dict[str, Any]:
         """使用LLM评估信息详细度充足性"""
@@ -729,6 +840,7 @@ class ReasoningGraph:
         prompt_template = self.prompts.get_sufficiency_questions_prompt()
         questions_prompt = prompt_template.format(
             collected_info=self._format_collected_info_for_assessment(collected_info),
+            sufficiency_scores=sufficiency_scores,
             overall_score=overall_score,
             lowest_dimension=lowest_dimension,
             lowest_score=lowest_score,
@@ -754,8 +866,11 @@ class ReasoningGraph:
 
         try:
             response = await self.llm.apredict(fitness_prompt)
+            print(f"DEBUG: 适宜性检查原始响应: {response[:200]}...")
             json_content = self._extract_json_from_markdown(response.strip())
-            return json.loads(json_content)
+            print(f"DEBUG: 提取的JSON内容: {json_content[:200]}...")
+            result = json.loads(json_content)
+            return result
         except Exception as e:
             print(f"❌ 适宜性检查失败: {e}")
             # 返回默认通过的结果
@@ -790,13 +905,19 @@ class ReasoningGraph:
             return "发现一些需要调整的地方，请修改设计以确保内容更适合目标学生群体。"
     
     async def _llm_generate_final_response(self, collected_info: Dict[str, Any],
+                                         sufficiency_scores: Dict[str, float],
                                          conversation_context: str) -> str:
         """使用LLM生成最终确认回复"""
+        
+        # 计算平均分
+        average_score = sum(sufficiency_scores.values()) / len(sufficiency_scores) if sufficiency_scores else 75
         
         # 使用PromptTemplate
         prompt_template = self.prompts.get_finish_response_prompt()
         final_prompt = prompt_template.format(
             collected_info=self._format_collected_info_for_assessment(collected_info),
+            sufficiency_scores=sufficiency_scores,
+            average_score=average_score,
             conversation_context=conversation_context
         )
 
@@ -907,6 +1028,11 @@ class ReasoningGraph:
             overall_sufficiency=0.0,
             sufficiency_threshold=75.0,  # 可配置
             sufficiency_passed=False,
+            
+            # 输入适宜性检查状态
+            input_fitness_result={},
+            input_fitness_passed=True,  # 默认通过，只有检查失败才标记为False
+            input_fitness_score=100,
             
             # 适宜性检查状态
             fitness_assessment={},
