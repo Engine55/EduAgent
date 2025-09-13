@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, validator
 from langchain.output_parsers import PydanticOutputParser
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from typing import List, Optional, Dict, Any
 
 
