@@ -135,22 +135,67 @@ export default function StoryboardPage() {
         }
 
         // 4. 图片文件（如果有的话）
-        if (storyboard.generated_image_data) {
+        if (storyboard.generated_image_url) {
           try {
-            // 从base64数据创建图片文件
-            const base64Data = storyboard.generated_image_data.base64_data
-            const fileExtension = storyboard.generated_image_data.file_extension
-            const fileName = `图片.${fileExtension}`
+            // 通过Next.js API代理下载图片（绕过CORS限制）
+            const imageResponse = await fetch('/api/download-image', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                imageUrl: storyboard.generated_image_url
+              })
+            })
             
-            // 将base64转换为二进制数据
-            const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0))
-            
-            sceneFolder.file(fileName, binaryData)
-            console.log(`✅ 添加图片文件: ${fileName}`)
+            if (imageResponse.ok) {
+              const imageBlob = await imageResponse.blob()
+              const contentType = imageResponse.headers.get('content-type') || 'image/png'
+              const fileName = contentType.includes('jpeg') || contentType.includes('jpg') 
+                ? '图片.jpg' 
+                : '图片.png'
+              
+              sceneFolder.file(fileName, imageBlob)
+              console.log(`✅ 添加图片文件: ${fileName}`)
+            } else {
+              // API下载失败，创建URL文件作为备选
+              sceneFolder.file('图片_URL.txt', storyboard.generated_image_url)
+            }
           } catch (error) {
-            console.error(`处理图片数据失败 ${storyboard.stage_id}:`, error)
-            // 创建一个备用说明文件
-            sceneFolder.file('图片_说明.txt', '图片数据处理失败，请联系技术支持')
+            console.error(`下载图片失败 ${storyboard.stage_id}:`, error)
+            // 创建一个URL文件作为备选
+            sceneFolder.file('图片_URL.txt', storyboard.generated_image_url)
+          }
+        }
+
+        // 5. 背景音乐文件
+        if (storyboard.storyboard.图片提示词) {
+          try {
+            console.log(`🎵 为 ${storyboard.stage_name} 生成背景音乐...`)
+            
+            const musicResponse = await fetch('/api/generate-music', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                imagePrompt: storyboard.storyboard.图片提示词,
+                sceneName: storyboard.stage_name,
+                duration: 60 // 60秒背景音乐
+              })
+            })
+            
+            if (musicResponse.ok) {
+              const musicBlob = await musicResponse.blob()
+              const fileName = '背景音乐.mp3'
+              
+              sceneFolder.file(fileName, musicBlob)
+              console.log(`✅ 添加音乐文件: ${fileName}`)
+            } else {
+              console.error(`音乐生成失败 ${storyboard.stage_id}:`, await musicResponse.text())
+            }
+          } catch (error) {
+            console.error(`音乐生成失败 ${storyboard.stage_id}:`, error)
           }
         }
       }
@@ -209,9 +254,7 @@ export default function StoryboardPage() {
             subject: parsedStoryData.subject,
             grade: parsedStoryData.grade,
             // 新增：预生成的内容
-            preGeneratedImageUrl: storyboard.generated_image_data ? 
-              `data:image/${storyboard.generated_image_data.file_extension};base64,${storyboard.generated_image_data.base64_data}` : 
-              undefined,
+            preGeneratedImageUrl: storyboard.generated_image_url,
             preGeneratedDialogue: storyboard.generated_dialogue,
             generationStatus: storyboard.generation_status,
           }

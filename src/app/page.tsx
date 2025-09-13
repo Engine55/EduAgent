@@ -190,10 +190,18 @@ export default function Home() {
         setMessages(prev => [...prev, successMessage])
 
         // 将数据存储到sessionStorage，然后跳转到故事板页面
+        // 优化：只存储图片URL，移除大体积的base64数据
+        const optimizedStoryboards = (result.data.storyboards_list || []).map(storyboard => ({
+          ...storyboard,
+          // 保留图片URL，移除base64数据以节省空间
+          generated_image_url: storyboard.generated_image_data?.original_url || null,
+          generated_image_data: undefined // 移除base64数据
+        }))
+
         const storyboardPageData = {
           story_id: result.data.requirement_id,
           story_title: result.data.rpg_framework?.标题 || '未知故事',
-          storyboards: result.data.storyboards_list || []
+          storyboards: optimizedStoryboards
         }
         
         sessionStorage.setItem('generatedStoryboardData', JSON.stringify(storyboardPageData))

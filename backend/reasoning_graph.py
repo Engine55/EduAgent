@@ -468,7 +468,7 @@ class Stage1ReasoningGraph:
             sections.append(f"  互动方式：{interactions}")
 
         return "\n".join(sections)
-    def save_final_requirements(self) -> Dict: 
+    def save_final_requirements(self) -> Dict:
         """保存最终收集的需求信息到数据库"""
         try:
             # 检查数据库连接
