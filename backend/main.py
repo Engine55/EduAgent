@@ -12,7 +12,7 @@ app = FastAPI(title="EduAgent API", version="1.0.0")
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Next.js开发服务器
+    allow_origins=['*'],  # Next.js开发服务器
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

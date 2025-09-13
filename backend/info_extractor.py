@@ -7,7 +7,7 @@ from typing import List, Optional, Dict, Any
 
 
 # 拆分的模型定义
-class BasicInfoExtracted(BaseModel): 
+class BasicInfoExtracted(BaseModel):
     """基础信息提取模型"""
     subject: Optional[str] = Field(None, description="学科，如数学、语文、英语、科学")
     grade: Optional[str] = Field(None, description="年级，如一年级、二年级、三年级")
