@@ -57,6 +57,7 @@ interface StoryData {
       file_extension: string
       original_url: string
     }
+    generated_image_url?: string
     generated_dialogue?: string
     generation_status?: {
       storyboard: 'success' | 'failed'

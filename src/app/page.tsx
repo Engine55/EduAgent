@@ -191,7 +191,7 @@ export default function Home() {
 
         // 将数据存储到sessionStorage，然后跳转到故事板页面
         // 优化：只存储图片URL，移除大体积的base64数据
-        const optimizedStoryboards = (result.data.storyboards_list || []).map(storyboard => ({
+        const optimizedStoryboards = (result.data.storyboards_list || []).map((storyboard: any) => ({
           ...storyboard,
           // 保留图片URL，移除base64数据以节省空间
           generated_image_url: storyboard.generated_image_data?.original_url || null,
