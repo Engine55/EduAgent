@@ -1,5 +1,0 @@
-{
-  "/page": "app/page.js",
-  "/storyboard/page": "app/storyboard/page.js",
-  "/api/generate-dialogue/route": "app/api/generate-dialogue/route.js"
-}
