@@ -349,6 +349,108 @@ class SceneGenerator:
             print(f"❌ 保存到数据库失败: {e}")
             return None
     
+    def _save_stage3_to_database(self, requirement_id: str, rpg_framework: Dict, stages_list: List[Dict], storyboards_list: List[Dict]) -> Optional[str]:
+        """保存Stage3完整数据到数据库，包括故事主体和每个关卡的详细信息"""
+        if not self.db_client:
+            return None
+            
+        try:
+            # 生成唯一ID
+            story_id = f"story_{str(uuid.uuid4())[:8]}"
+            timestamp = datetime.now().isoformat()
+            
+            # 1. 首先保存故事主体数据（包含RPG框架和关卡列表）
+            story_data = {
+                "story_id": story_id,
+                "story_title": rpg_framework.get('游戏名称', '未命名游戏'),
+                "requirement_id": requirement_id,
+                "timestamp": timestamp,
+                "status": "stage3_complete",
+                "subject": rpg_framework.get('学科', '未知'),
+                "grade": rpg_framework.get('年级', '未知'),
+                "rpg_framework": rpg_framework,
+                "stages_data": stages_list,
+                "total_stages": len(stages_list),
+                "successful_storyboards": len(storyboards_list)
+            }
+            
+            # 保存故事主体
+            story_result = self.db_client.save_story(story_id, requirement_id, story_data)
+            if not story_result.get('success'):
+                print(f"❌ 故事主体保存失败: {story_result.get('error')}")
+                return None
+            
+            print(f"✅ 故事主体已保存: {story_id}")
+            
+            # 2. 逐个保存每个关卡的详细故事板数据
+            saved_count = 0
+            for storyboard_item in storyboards_list:
+                try:
+                    stage_id = storyboard_item.get('stage_id', f"stage_{storyboard_item.get('stage_index', 0)}")
+                    storyboard_id = f"storyboard_{story_id}_{stage_id}"
+                    
+                    # 提取关卡连接信息
+                    next_stages = []
+                    stage_connections = storyboard_item.get('storyboard', {}).get('人物对话', {}).get('场景转换', {})
+                    if stage_connections:
+                        next_stages = list(stage_connections.keys())
+                    
+                    # 构建包含所有必要信息的故事板数据
+                    complete_storyboard_data = {
+                        "storyboard_id": storyboard_id,
+                        "story_id": story_id,
+                        "stage_id": stage_id,
+                        "stage_index": storyboard_item.get('stage_index'),
+                        "stage_name": storyboard_item.get('stage_name'),
+                        "timestamp": timestamp,
+                        
+                        # 剧本信息
+                        "script": storyboard_item.get('storyboard', {}).get('剧本', {}),
+                        
+                        # 角色信息
+                        "characters": storyboard_item.get('storyboard', {}).get('人物档案', {}),
+                        
+                        # 对话内容
+                        "dialogue_content": storyboard_item.get('generated_dialogue'),
+                        
+                        # 图像信息
+                        "image_data": {
+                            "prompt": storyboard_item.get('storyboard', {}).get('图片提示词'),
+                            "generated_image": storyboard_item.get('generated_image_data'),
+                            "image_format": "base64" if storyboard_item.get('generated_image_data') else None
+                        },
+                        
+                        # 下一关选项（节点名称）
+                        "next_stage_options": next_stages,
+                        "stage_connections": stage_connections,
+                        
+                        # 生成状态
+                        "generation_status": storyboard_item.get('generation_status', {}),
+                        
+                        # 完整的原始故事板数据
+                        "full_storyboard": storyboard_item.get('storyboard', {})
+                    }
+                    
+                    # 保存单个故事板
+                    storyboard_result = self.db_client.save_storyboard(storyboard_id, story_id, complete_storyboard_data)
+                    
+                    if storyboard_result.get('success'):
+                        saved_count += 1
+                        print(f"✅ 关卡故事板已保存: {storyboard_item.get('stage_name')} ({stage_id})")
+                    else:
+                        print(f"❌ 关卡故事板保存失败: {storyboard_item.get('stage_name')} - {storyboard_result.get('error')}")
+                        
+                except Exception as e:
+                    print(f"❌ 保存关卡故事板异常 {storyboard_item.get('stage_name', 'unknown')}: {e}")
+                    continue
+            
+            print(f"💾 Stage3数据保存完成: {saved_count}/{len(storyboards_list)} 个关卡故事板已保存")
+            return story_id
+            
+        except Exception as e:
+            print(f"❌ Stage3数据保存失败: {e}")
+            return None
+    
     def _update_story_index(self, story_id: str, rpg_framework: Dict, stages_list: List[Dict], timestamp: str):
         """更新故事索引"""
         try:
@@ -480,6 +582,14 @@ class SceneGenerator:
         print(f"   📝 故事板: {storyboard_success}/{len(stages_list)}")
         print(f"   🎨 图像: {image_success}/{len(stages_list)}")
         print(f"   💬 对话: {dialogue_success}/{len(stages_list)}")
+        
+        # 保存stage3数据到数据库
+        if storyboards_list:
+            story_id = self._save_stage3_to_database(requirement_id, rpg_framework, stages_list, storyboards_list)
+            if story_id:
+                print(f"💾 Stage3数据已保存到数据库，story_id: {story_id}")
+            else:
+                print(f"⚠️ Stage3数据保存失败")
         
         return rpg_framework, stages_list, storyboards_list
     
