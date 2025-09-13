@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  PROJECT_ID: planar-ember-472009-n7
   GAR_LOCATION: asia-east1  # 可以改为其他region
   SERVICE: eduagent-backend
   REGION: asia-east1
