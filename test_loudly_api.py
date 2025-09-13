@@ -167,7 +167,7 @@ def main():
         "Dramatic cinematic orchestral music with strings and brass",
         "Lo-fi hip hop beats with vinyl crackle and mellow vibes"
     ]
-
+ 
     print("=== Stability AI 音频生成器 ===\n")
 
     while True:
