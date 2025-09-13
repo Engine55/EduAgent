@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 import uuid
 
-from reasoning_graph import Stage1ReasoningGraph, ReasoningGraph, create_reasoning_graph
+from reasoning_graph import create_reasoning_graph
 from info_extractor import create_info_extractor
 
 
@@ -72,24 +72,32 @@ class AgentService:
         }
 
     async def process_request(self, user_input: str) -> Dict[str, Any]:
-        """处理用户请求 - 核心业务逻辑"""
+        """处理用户请求 - 使用状态持久化"""
 
         try:
-            # 1. 提取用户输入中的信息并更新状态
-            extracted_info = await self._extract_and_update_info(user_input)
-            print(f"DEBUG: 提取到的信息: {extracted_info}")
-            print(f"DEBUG: 当前collected_info: {self.collected_info}")
+            # 确保推理状态已初始化
+            if self.reasoning_state is None:
+                self.reasoning_state = self.reasoning_graph.initialize_reasoning_state(
+                    session_id=self.session_id,
+                    user_id=self.user_id,
+                    collected_info=self.collected_info
+                )
             
-            # 2. 调用ReasoningGraph进行智能推理
-            reasoning_result = await self.reasoning_graph.process_reasoning_request(
-                session_id=self.session_id,
-                user_id=self.user_id,
-                collected_info=self.collected_info
+            # 使用持久化状态处理请求
+            reasoning_result = await self.reasoning_graph.process_reasoning_request_with_state(
+                reasoning_state=self.reasoning_state,
+                user_input=user_input
             )
             
             print(f"DEBUG: 推理结果: {reasoning_result}")
             
-            # 3. 格式化并返回结果
+            # 更新持久化的状态
+            if reasoning_result.get("success"):
+                self.reasoning_state = reasoning_result["final_state"]
+                # 同步更新collected_info
+                self.collected_info = self.reasoning_state.get("collected_info", {})
+            
+            # 格式化并返回结果
             return self._format_reasoning_response(reasoning_result, user_input)
 
         except Exception as e:
@@ -131,29 +139,6 @@ class AgentService:
             "timestamp": self._get_timestamp()
         }
 
-    async def _extract_and_update_info(self, user_input: str) -> Dict[str, Any]:
-        """提取用户输入信息并更新collected_info状态"""
-        
-        # 使用信息提取器提取信息
-        extracted_info = await self.extractor.extract_from_user_input(user_input)
-        
-        # 更新collected_info状态
-        for key, value in extracted_info.items():
-            if value and key in self.collected_info:
-                if isinstance(value, list):
-                    # 处理列表类型的数据
-                    if self.collected_info[key]:
-                        # 合并列表，去重
-                        existing = self.collected_info[key] if isinstance(self.collected_info[key], list) else [self.collected_info[key]]
-                        combined = existing + value
-                        self.collected_info[key] = list(set(combined))
-                    else:
-                        self.collected_info[key] = value
-                else:
-                    # 处理字符串类型的数据
-                    self.collected_info[key] = value
-        
-        return extracted_info
 
     def _format_reasoning_response(self, reasoning_result: Dict[str, Any], user_input: str) -> Dict[str, Any]:
         """格式化ReasoningGraph的返回结果"""
@@ -168,6 +153,7 @@ class AgentService:
         final_state = reasoning_result["final_state"]
         stage = reasoning_result["stage"]
         messages = reasoning_result.get("messages", [])
+        ready_for_generation = reasoning_result.get("ready_for_generation", False)
         
         # 获取最后一条助手消息作为回复
         assistant_message = ""
@@ -176,26 +162,62 @@ class AgentService:
             if last_message.get("role") == "assistant":
                 assistant_message = last_message.get("content", "")
         
-        # 根据stage确定返回格式
-        if stage == "ready_for_generation":
+        # 根据是否准备好生成内容来确定返回格式
+        if ready_for_generation:
             return {
                 "response": assistant_message,
                 "ready_for_stage2": True,
                 "stage": "stage1_complete",
                 "requirement_id": final_state.get("session_id"),
                 "final_requirements": final_state.get("final_requirements", {}),
+                "collected_info": final_state.get("collected_info", {}),
                 "action": "stage1_completed",
                 "timestamp": self._get_timestamp()
             }
         else:
+            # 还在收集阶段，根据具体stage返回不同信息
+            stage_display_names = {
+                "stage1_collecting": "信息收集中",
+                "need_more_details": "需要更多详细信息",
+                "fitness_check": "内容适宜性检查中",
+                "unknown": "处理中"
+            }
+            
             return {
                 "response": assistant_message,
                 "ready_for_stage2": False,
                 "stage": "stage1_collecting",
                 "current_reasoning_stage": stage,
+                "stage_display": stage_display_names.get(stage, stage),
+                "collected_info": final_state.get("collected_info", {}),
                 "action": "continue_conversation",
                 "timestamp": self._get_timestamp()
             }
+
+    def get_session_status(self) -> Dict[str, Any]:
+        """获取当前会话状态"""
+        if self.reasoning_state is None:
+            return {
+                "status": "not_initialized",
+                "message": "会话未初始化",
+                "timestamp": self._get_timestamp()
+            }
+        
+        # 计算完成度
+        total_fields = len(self.collected_info)
+        completed_fields = sum(1 for v in self.collected_info.values() if v is not None and v != [] and v != "")
+        completion_rate = completed_fields / total_fields if total_fields > 0 else 0
+        
+        return {
+            "status": "active",
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+            "completion_rate": completion_rate,
+            "collected_info": self.collected_info,
+            "ready_for_generation": self.reasoning_state.get("ready_for_generation", False),
+            "current_stage": self.reasoning_state.get("current_stage", "unknown"),
+            "timestamp": self._get_timestamp()
+        }
 
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""

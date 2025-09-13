@@ -684,43 +684,19 @@ class ReasoningGraph:
                                     conversation_context: str) -> Dict[str, Any]:
         """使用LLM评估信息详细度充足性"""
         
-        assessment_prompt = f\"\"\"你是专业的教育游戏设计评估专家。请评估以下收集到的信息是否足够详细，能够用来生成高质量的教育游戏内容。
-
-已收集信息：
-{self._format_collected_info_for_assessment(collected_info)}
-
-对话上下文：
-{conversation_context}
-
-请从以下4个维度评估信息的详细度充足性，每个维度给出0-100分的评分和具体理由：
-
-1. **基础信息充足性** (学科、年级、知识点的明确性和具体性)
-2. **教学信息充足性** (教学目标和难点的清晰度和可操作性) 
-3. **游戏设定充足性** (游戏风格、角色、世界观的完整性和吸引力)
-4. **情节设定充足性** (故事情节、互动方式的丰富性和教育性)
-
-请以JSON格式返回评估结果：
-{{
-    "dimension_scores": {{
-        "基础信息充足性": 分数,
-        "教学信息充足性": 分数,
-        "游戏设定充足性": 分数,
-        "情节设定充足性": 分数
-    }},
-    "overall_score": 总体平均分数,
-    "detailed_feedback": {{
-        "strengths": ["优势点1", "优势点2"],
-        "weaknesses": ["不足点1", "不足点2"],
-        "suggestions": ["改进建议1", "改进建议2"]
-    }}
-}}\"\"\"
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_sufficiency_assessment_prompt()
+        assessment_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            conversation_context=conversation_context
+        )
 
         try:
             response = await self.llm.apredict(assessment_prompt)
             result = json.loads(response.strip())
             return result
         except Exception as e:
-            print(f\"❌ LLM评估失败: {e}\")
+            print(f"❌ LLM评估失败: {e}")
             # 返回默认的低分评估
             return {
                 "dimension_scores": {
@@ -760,8 +736,8 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(questions_prompt)
         except Exception as e:
-            print(f\"❌ 生成补充问题失败: {e}\")
-            return f\"为了更好地设计游戏，请提供更多关于{lowest_dimension}的详细信息。比如您希望游戏具体如何帮助学生学习？\"
+            print(f"❌ 生成补充问题失败: {e}")
+            return f"为了更好地设计游戏，请提供更多关于{lowest_dimension}的详细信息。比如您希望游戏具体如何帮助学生学习？"
     
     async def _llm_check_fitness(self, collected_info: Dict[str, Any], 
                                conversation_context: str) -> Dict[str, Any]:
@@ -778,7 +754,7 @@ class ReasoningGraph:
             response = await self.llm.apredict(fitness_prompt)
             return json.loads(response.strip())
         except Exception as e:
-            print(f\"❌ 适宜性检查失败: {e}\")
+            print(f"❌ 适宜性检查失败: {e}")
             # 返回默认通过的结果
             return {
                 "overall_fitness": "适宜",
@@ -790,9 +766,9 @@ class ReasoningGraph:
                                              collected_info: Dict[str, Any],
                                              conversation_context: str) -> str:
         """使用LLM生成适宜性协商回复"""
-        
-        concerns_text = \"\\n\".join([
-            f\"- {concern['type']}: {concern['description']} (严重程度: {concern['severity']})\"
+
+        concerns_text = "\n".join([
+            f"- {concern.get('category', concern.get('type', '未知类别'))}: {concern.get('description', '未知描述')} (严重程度: {concern.get('severity', '未知')})"
             for concern in fitness_concerns
         ])
         
@@ -807,8 +783,8 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(negotiate_prompt)
         except Exception as e:
-            print(f\"❌ 生成协商回复失败: {e}\")
-            return \"发现一些需要调整的地方，请修改设计以确保内容更适合目标学生群体。\"
+            print(f"❌ 生成协商回复失败: {e}")
+            return "发现一些需要调整的地方，请修改设计以确保内容更适合目标学生群体。"
     
     async def _llm_generate_final_response(self, collected_info: Dict[str, Any],
                                          conversation_context: str) -> str:
@@ -824,66 +800,65 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(final_prompt)
         except Exception as e:
-            print(f\"❌ 生成最终回复失败: {e}\")
-            return \"🎉 信息收集完成！您的教育游戏设计非常棒，我们现在开始生成具体的游戏内容。\"
-    
+            print(f"❌ 生成最终回复失败: {e}")
+            return "🎉 信息收集完成！您的教育游戏设计非常棒，我们现在开始生成具体的游戏内容。"
     def _format_collected_info_for_assessment(self, collected_info: Dict[str, Any]) -> str:
         """格式化收集的信息用于评估"""
         formatted_parts = []
         
         # 基础信息
-        if any([collected_info.get(\"subject\"), collected_info.get(\"grade\"), collected_info.get(\"knowledge_points\")]):
-            formatted_parts.append(\"【基础信息】\")
-            if collected_info.get(\"subject\"):
-                formatted_parts.append(f\"  学科: {collected_info['subject']}\")
-            if collected_info.get(\"grade\"):
-                formatted_parts.append(f\"  年级: {collected_info['grade']}\")
-            if collected_info.get(\"knowledge_points\"):
+        if any([collected_info.get("subject"), collected_info.get("grade"), collected_info.get("knowledge_points")]):
+            formatted_parts.append("【基础信息】")
+            if collected_info.get("subject"):
+                formatted_parts.append(f"  学科: {collected_info['subject']}")
+            if collected_info.get("grade"):
+                formatted_parts.append(f"  年级: {collected_info['grade']}")
+            if collected_info.get("knowledge_points"):
                 points = collected_info['knowledge_points']
                 if isinstance(points, list):
-                    points = \"、\".join(points)
-                formatted_parts.append(f\"  知识点: {points}\")
-        
+                    points = "、".join(points)
+                formatted_parts.append(f"  知识点: {points}")
+
         # 教学信息
-        if any([collected_info.get(\"teaching_goals\"), collected_info.get(\"teaching_difficulties\")]):
-            formatted_parts.append(\"\\n【教学信息】\")
-            if collected_info.get(\"teaching_goals\"):
+        if any([collected_info.get("teaching_goals"), collected_info.get("teaching_difficulties")]):
+            formatted_parts.append("\n【教学信息】")
+            if collected_info.get("teaching_goals"):
                 goals = collected_info['teaching_goals']
                 if isinstance(goals, list):
-                    goals = \"、\".join(goals)
-                formatted_parts.append(f\"  教学目标: {goals}\")
-            if collected_info.get(\"teaching_difficulties\"):
+                    goals = "、".join(goals)
+                formatted_parts.append(f"  教学目标: {goals}")
+            if collected_info.get("teaching_difficulties"):
                 difficulties = collected_info['teaching_difficulties']
                 if isinstance(difficulties, list):
-                    difficulties = \"、\".join(difficulties)
-                formatted_parts.append(f\"  教学难点: {difficulties}\")
-        
+                    difficulties = "、".join(difficulties)
+                formatted_parts.append(f"  教学难点: {difficulties}")
+
         # 游戏设定
-        if any([collected_info.get(\"game_style\"), collected_info.get(\"character_design\"), collected_info.get(\"world_setting\")]):
-            formatted_parts.append(\"\\n【游戏设定】\")
-            if collected_info.get(\"game_style\"):
-                formatted_parts.append(f\"  游戏风格: {collected_info['game_style']}\")
-            if collected_info.get(\"character_design\"):
-                formatted_parts.append(f\"  角色设计: {collected_info['character_design']}\")
-            if collected_info.get(\"world_setting\"):
-                formatted_parts.append(f\"  世界背景: {collected_info['world_setting']}\")
-        
+        if any([collected_info.get("game_style"), collected_info.get("character_design"),
+                collected_info.get("world_setting")]):
+            formatted_parts.append("\n【游戏设定】")
+            if collected_info.get("game_style"):
+                formatted_parts.append(f"  游戏风格: {collected_info['game_style']}")
+            if collected_info.get("character_design"):
+                formatted_parts.append(f"  角色设计: {collected_info['character_design']}")
+            if collected_info.get("world_setting"):
+                formatted_parts.append(f"  世界背景: {collected_info['world_setting']}")
+
         # 情节设定
-        if any([collected_info.get(\"plot_requirements\"), collected_info.get(\"interaction_requirements\")]):
-            formatted_parts.append(\"\\n【情节设定】\")
-            if collected_info.get(\"plot_requirements\"):
+        if any([collected_info.get("plot_requirements"), collected_info.get("interaction_requirements")]):
+            formatted_parts.append("\n【情节设定】")
+            if collected_info.get("plot_requirements"):
                 plots = collected_info['plot_requirements']
                 if isinstance(plots, list):
-                    plots = \"、\".join(plots)
-                formatted_parts.append(f\"  情节需求: {plots}\")
-            if collected_info.get(\"interaction_requirements\"):
+                    plots = "、".join(plots)
+                formatted_parts.append(f"  情节需求: {plots}")
+            if collected_info.get("interaction_requirements"):
                 interactions = collected_info['interaction_requirements']
                 if isinstance(interactions, list):
-                    interactions = \"、\".join(interactions)
-                formatted_parts.append(f\"  互动方式: {interactions}\")
-        
-        return \"\\n\".join(formatted_parts) if formatted_parts else \"暂无详细信息\"
-    
+                    interactions = "、".join(interactions)
+                formatted_parts.append(f"  互动方式: {interactions}")
+
+        return "\n".join(formatted_parts) if formatted_parts else "暂无详细信息"
     # ==================== 公共接口方法 ====================
     
     def initialize_reasoning_state(self, session_id: str, user_id: str, 

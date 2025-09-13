@@ -12,11 +12,12 @@ import ReactFlow, {
   useEdgesState,
   Controls,
   Background,
+  NodeTypes,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import CustomStoryboardNode from '@/components/CustomStoryboardNode'
 
-const nodeTypes = {
+const nodeTypes: NodeTypes = {
   storyboard: CustomStoryboardNode,
 }
 
