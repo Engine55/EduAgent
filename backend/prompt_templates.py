@@ -74,23 +74,30 @@ class PromptTemplates:
 助手回复："""
         )
 
-        # 场景需求收集模板
+        # 情节需求收集模板
         self.scene_info_prompt = PromptTemplate(
             input_variables=["history", "input"],
-            template="""你是专业的教育游戏设计助手。最后需要确定具体的场景和互动需求。
+            template="""你是专业的教育游戏设计助手。最后需要确定具体的情节和互动需求。
 
 对话历史：
 {history}
 
-当前任务：确定场景需求和互动方式
-需要了解的信息：
-- 希望的场景类型（如：森林冒险、城堡解谜、太空探索等）
-- 互动方式偏好（如：选择题答题、拖拽操作、语音互动等）
-- 奖励和评估机制想法
+当前任务：设计情节发展和互动方式
+需要了解的详细信息：
+【情节需求】
+- 故事主线：主角的目标和动机（如：拯救被困的朋友、寻找失落的宝藏、完成学习任务）
+- 情节结构：故事发展方式（如：线性闯关、分支选择、开放探索）
+- 冲突设置：学习挑战的呈现形式（如：解谜障碍、知识竞赛、合作任务）
+- 角色关系：主角与NPC的互动类型（如：师生关系、伙伴协作、竞争对手）
+- 情感基调：希望营造的氛围（如：轻松愉快、紧张刺激、温馨感人）
+
+【互动方式】
+- 操作方式偏好（如：选择题答题、拖拽操作、语音互动等）
+- 评估和奖励机制想法
 
 用户输入：{input}
 
-请了解用户对游戏场景和互动方式的具体想法，确保游戏既有趣又有教育意义。
+请详细了解用户对游戏情节发展和互动方式的具体想法，确保游戏既有完整的故事性又有教育意义。
 
 助手回复："""
         )
@@ -240,17 +247,17 @@ class PromptTemplates:
         if gamestyle_items:
             formatted_sections.append("【游戏设定】\n" + "\n".join(gamestyle_items))
 
-        # 场景需求部分
+        # 情节需求部分
         scene_items = []
-        if collected_info.get("scene_requirements"):
-            scenes = "、".join(collected_info['scene_requirements'])
-            scene_items.append(f"✓ 场景需求：{scenes}")
+        if collected_info.get("plot_requirements"):
+            plots = "、".join(collected_info['plot_requirements'])
+            scene_items.append(f"✓ 情节需求：{plots}")
         if collected_info.get("interaction_requirements"):
             interactions = "、".join(collected_info['interaction_requirements'])
             scene_items.append(f"✓ 互动方式：{interactions}")
 
         if scene_items:
-            formatted_sections.append("【场景设计】\n" + "\n".join(scene_items))
+            formatted_sections.append("【情节设计】\n" + "\n".join(scene_items))
 
         return "\n\n".join(formatted_sections) if formatted_sections else "暂无信息"
 
@@ -299,9 +306,9 @@ class PromptTemplates:
             "character_design": "请说明希望的角色设计",
             "world_setting": "请描述游戏的世界背景设定",
             
-            # scene_info字段
-            "scene_requirements": "请描述希望的游戏场景",
-            "interaction_requirements": "请说明偏好的互动方式"
+            # scene_info字段  
+            "plot_requirements": "请详细描述希望的情节发展，包括故事主线、情节结构、冲突设置、角色关系和情感基调",
+            "interaction_requirements": "请说明偏好的互动方式和评估机制"
         }
         
         if missing_fields:

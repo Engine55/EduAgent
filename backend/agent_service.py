@@ -1,28 +1,47 @@
 from typing import Dict, Any, Optional
 import asyncio
 from datetime import datetime
+import uuid
 
-from reasoning_graph import Stage1ReasoningGraph
+from reasoning_graph import Stage1ReasoningGraph, ReasoningGraph, create_reasoning_graph
 from info_extractor import create_info_extractor
 
 
 class AgentService:
     def __init__(self, model_name: str = "gpt-4o-mini"):
-        """初始化Agent服务 - 单用户版本"""
+        """初始化Agent服务"""
         self.model_name = model_name
+        
+        # 会话管理
+        self.session_id = str(uuid.uuid4())
+        self.user_id = "default_user"
 
-        # 单一会话实例
-        self.reasoning_graph: Optional[Stage1ReasoningGraph] = None
+        # 智能推理图 - 负责完整的对话推理流程
+        self.reasoning_graph = create_reasoning_graph()
 
         # 信息提取器
         self.extractor = create_info_extractor(model_name)
+        
+        # 维护collected_info状态
+        self.collected_info = {
+            "subject": None,
+            "grade": None,
+            "knowledge_points": None,
+            "teaching_goals": None,
+            "teaching_difficulties": None,
+            "game_style": None,
+            "character_design": None,
+            "world_setting": None,
+            "plot_requirements": None,
+            "interaction_requirements": None
+        }
 
-        print(f"AgentService初始化完成，使用模型: {model_name}")
+        print(f"AgentService初始化完成，使用模型: {model_name}，启用智能推理")
 
     def start_conversation(self) -> Dict[str, Any]:
         """开始对话会话"""
-        # 创建新的Stage1推理图实例
-        self.reasoning_graph = Stage1ReasoningGraph(self.model_name, self.extractor)
+        # 重新生成会话ID
+        self.session_id = str(uuid.uuid4())
 
         welcome_message = """🎮 您好！我是教育游戏设计助手！
 
@@ -45,33 +64,23 @@ class AgentService:
     async def process_request(self, user_input: str) -> Dict[str, Any]:
         """处理用户请求 - 核心业务逻辑"""
 
-        # 检查会话是否存在
-        if self.reasoning_graph is None:
-            return {
-                "error": "会话未开始，请先开始对话",
-                "action": "start_session",
-                "timestamp": self._get_timestamp()
-            }
-
         try:
-            # 核心处理：调用推理图处理对话轮次
-            result = await self.reasoning_graph.process_conversation_turn(user_input)
-
-            # 添加metadata字段
-            result["ready_for_stage2"] = (result["next_action"] == "proceed_to_stage2")
-
-            # 根据推理图的结果决定下一步动作
-            if result["next_action"] == "proceed_to_stage2":
-                # Stage1完成，但仍使用collection格式返回
-                return self._format_collection_response(result)
-
-            elif result["next_action"] == "continue_collection":
-                # Stage1未完成，继续收集信息
-                return self._format_collection_response(result)
-
-            else:
-                # 处理其他可能的状态
-                return self._format_general_response(result)
+            # 1. 提取用户输入中的信息并更新状态
+            extracted_info = await self._extract_and_update_info(user_input)
+            print(f"DEBUG: 提取到的信息: {extracted_info}")
+            print(f"DEBUG: 当前collected_info: {self.collected_info}")
+            
+            # 2. 调用ReasoningGraph进行智能推理
+            reasoning_result = await self.reasoning_graph.process_reasoning_request(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                collected_info=self.collected_info
+            )
+            
+            print(f"DEBUG: 推理结果: {reasoning_result}")
+            
+            # 3. 格式化并返回结果
+            return self._format_reasoning_response(reasoning_result, user_input)
 
         except Exception as e:
             print(f"处理请求时出错: {e}")
@@ -81,123 +90,95 @@ class AgentService:
                 "timestamp": self._get_timestamp()
             }
 
-    async def _transition_to_stage2(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """过渡到Stage2 - 生成游戏内容"""
-        requirements = result["requirements"]
-
-        # TODO: 这里将来调用Stage2和Stage3的逻辑
-        # stage2_result = await self.stage2_service.generate_story_blueprint(requirements)
-        # stage3_result = await self.stage3_service.generate_scenes(stage2_result)
-
-        # 清理Stage1会话
-        self.reasoning_graph = None
-
-        return {
-            "response": result["response"] + "\n\n🚀 需求收集完成！正在为您生成游戏内容，请稍候...",
-            "stage": "stage1_complete",
-            "next_stage": "stage2_generation",
-            "requirements": requirements,
-            "timestamp": self._get_timestamp(),
-            "action": "generate_content"
-        }
-
-    def _format_collection_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """格式化Stage1信息收集中的响应"""
-        response_data = {
-            "response": result["response"],
-            "ready_for_stage2": result.get("ready_for_stage2", False),
-            "timestamp": self._get_timestamp(),
-        }
-        
-        # 如果Stage1完成，返回完成状态的信息
-        if result.get("next_action") == "proceed_to_stage2":
-            response_data.update({
-                "stage": "stage1_complete",
-                "requirement_id": result.get("requirement_id"),
-                "requirements": result.get("requirements"),
-                "action": "stage1_completed"
-            })
-        else:
-            # Stage1未完成，返回收集状态的信息
-            response_data.update({
-                "stage": "stage1_collecting", 
-                "current_stage": result["lacked_info"]["stage"],
-                "missing_fields": result["lacked_info"]["missing_fields"],
-                "completion_rate": result["lacked_info"]["completion_rate"],
-                "action": "continue_conversation"
-            })
-            
-        return response_data
-
-    def _format_general_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """格式化一般响应"""
-        return {
-            "response": result.get("response", "我理解了您的输入，请继续..."),
-            "stage": result.get("stage", "unknown"),
-            "timestamp": self._get_timestamp(),
-            "action": "continue_conversation"
-        }
-
-    def get_session_status(self) -> Dict[str, Any]:
-        """获取会话状态"""
-        if self.reasoning_graph is None:
-            return {
-                "status": "no_session",
-                "message": "会话未开始",
-                "timestamp": self._get_timestamp()
-            }
-
-        current_stage = self.reasoning_graph.determine_current_stage()
-
-        if current_stage == "complete":
-            completion_rate = 1.0
-            missing_fields = []
-        else:
-            lacked_info = self.reasoning_graph.get_lacked_info()
-            completion_rate = lacked_info["completion_rate"]
-            missing_fields = lacked_info["missing_fields"]
-
-        return {
-            "status": "active",
-            "current_stage": current_stage,
-            "completion_rate": completion_rate,
-            "missing_fields": missing_fields,
-            "collected_info": self.reasoning_graph.collected_info,
-            "timestamp": self._get_timestamp()
-        }
-
-    def end_session(self) -> Dict[str, Any]:
-        """结束会话"""
-        if self.reasoning_graph is None:
-            return {
-                "status": "no_session",
-                "message": "会话不存在",
-                "timestamp": self._get_timestamp()
-            }
-
-        # 获取最终收集的信息
-        final_info = self.reasoning_graph.collected_info
-
-        # 清理会话
-        self.reasoning_graph = None
-
-        return {
-            "status": "session_ended",
-            "message": "会话已成功结束",
-            "final_collected_info": final_info,
-            "timestamp": self._get_timestamp()
-        }
 
     def reset_session(self) -> Dict[str, Any]:
         """重置会话"""
-        # 重新创建推理图实例
-        self.reasoning_graph = Stage1ReasoningGraph(self.model_name, self.extractor)
+        # 重新生成会话ID并清空collected_info
+        self.session_id = str(uuid.uuid4())
+        self.collected_info = {
+            "subject": None,
+            "grade": None,
+            "knowledge_points": None,
+            "teaching_goals": None,
+            "teaching_difficulties": None,
+            "game_style": None,
+            "character_design": None,
+            "world_setting": None,
+            "plot_requirements": None,
+            "interaction_requirements": None
+        }
 
         return {
             "status": "session_reset",
             "message": "会话已重置，让我们重新开始",
             "timestamp": self._get_timestamp()
         }
+
+    async def _extract_and_update_info(self, user_input: str) -> Dict[str, Any]:
+        """提取用户输入信息并更新collected_info状态"""
+        
+        # 使用信息提取器提取信息
+        extracted_info = await self.extractor.extract_from_user_input(user_input)
+        
+        # 更新collected_info状态
+        for key, value in extracted_info.items():
+            if value and key in self.collected_info:
+                if isinstance(value, list):
+                    # 处理列表类型的数据
+                    if self.collected_info[key]:
+                        # 合并列表，去重
+                        existing = self.collected_info[key] if isinstance(self.collected_info[key], list) else [self.collected_info[key]]
+                        combined = existing + value
+                        self.collected_info[key] = list(set(combined))
+                    else:
+                        self.collected_info[key] = value
+                else:
+                    # 处理字符串类型的数据
+                    self.collected_info[key] = value
+        
+        return extracted_info
+
+    def _format_reasoning_response(self, reasoning_result: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+        """格式化ReasoningGraph的返回结果"""
+        
+        if not reasoning_result.get("success"):
+            return {
+                "error": reasoning_result.get("error", "推理处理失败"),
+                "action": "retry",
+                "timestamp": self._get_timestamp()
+            }
+        
+        final_state = reasoning_result["final_state"]
+        stage = reasoning_result["stage"]
+        messages = reasoning_result.get("messages", [])
+        
+        # 获取最后一条助手消息作为回复
+        assistant_message = ""
+        if messages:
+            last_message = messages[-1]
+            if last_message.get("role") == "assistant":
+                assistant_message = last_message.get("content", "")
+        
+        # 根据stage确定返回格式
+        if stage == "ready_for_generation":
+            return {
+                "response": assistant_message,
+                "ready_for_stage2": True,
+                "stage": "stage1_complete",
+                "requirement_id": final_state.get("session_id"),
+                "final_requirements": final_state.get("final_requirements", {}),
+                "action": "stage1_completed",
+                "timestamp": self._get_timestamp()
+            }
+        else:
+            return {
+                "response": assistant_message,
+                "ready_for_stage2": False,
+                "stage": "stage1_collecting",
+                "current_reasoning_stage": stage,
+                "action": "continue_conversation",
+                "timestamp": self._get_timestamp()
+            }
 
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""

@@ -105,7 +105,7 @@ class InteractiveChat:
                             'game_style': '游戏风格',
                             'character_design': '角色设计',
                             'world_setting': '世界背景',
-                            'scene_requirements': '场景需求',
+                            'plot_requirements': '情节需求',
                             'interaction_requirements': '互动方式'
                         }.get(key, key)
                         

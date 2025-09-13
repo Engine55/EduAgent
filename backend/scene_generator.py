@@ -39,7 +39,7 @@ STAGE_2_PROMPT = """你是一名"剧情驱动教育游戏设计师"。你的任�
 - 游戏风格：{game_style}          # 如"童话/蒸汽朋克/科幻探险/地城探险"等
 - 角色设计：{character_design}     # 仅两个：玩家 + 1 位 NPC（向导/导师/同伴）
 - 世界背景：{world_setting}        # 故事设定、主线矛盾、任务缘由
-- 场景需求：{scene_requirements}   # "场景=大的关卡舞台"，同一关可内含多个分镜
+- 情节需求：{plot_requirements}   # "情节=故事发展脉络"，描述希望的剧情发展类型
 - 互动需求：{interaction_requirements}
 
 【剧情驱动框架设计】
@@ -231,7 +231,7 @@ class SceneGenerator:
                 game_style=collected_info.get('game_style', '未指定'),
                 character_design=collected_info.get('character_design', '未指定'),
                 world_setting=collected_info.get('world_setting', '未指定'),
-                scene_requirements=', '.join(collected_info.get('scene_requirements', [])),
+                plot_requirements=', '.join(collected_info.get('plot_requirements', [])),
                 interaction_requirements=', '.join(collected_info.get('interaction_requirements', []))
             )
             

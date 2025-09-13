@@ -38,7 +38,7 @@ class GameStyleExtracted(BaseModel):
 
 class SceneInfoExtracted(BaseModel):
     """场景信息提取模型"""
-    scene_requirements: Optional[List[str]] = Field(None, description="场景需求列表")
+    plot_requirements: Optional[List[str]] = Field(None, description="情节需求列表")
     interaction_requirements: Optional[List[str]] = Field(None, description="互动方式需求列表")
     
     class Config:
@@ -55,7 +55,7 @@ class ExtractedInfo(BaseModel):
     game_style: Optional[str] = Field(description="游戏风格，如魔法冒险、科幻探索、童话故事")
     character_design: Optional[str] = Field(description="角色设计偏好")
     world_setting: Optional[str] = Field(description="世界观背景设定")
-    scene_requirements: Optional[List[str]] = Field(description="场景需求列表")
+    plot_requirements: Optional[List[str]] = Field(description="情节需求列表")
     interaction_requirements: Optional[List[str]] = Field(description="互动方式需求列表")
 
     # 只保留基本的数据清理
