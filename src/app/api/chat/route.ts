@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     // TODO: 替换为真实的Python后端调用
-    // const pythonBackendResponse = await fetch('http://localhost:8000/chat', {
+    // const pythonBackendResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL}/chat`, {
     //   method: 'POST',
     //   headers: {
     //     'Content-Type': 'application/json',

@@ -39,7 +39,7 @@ export default function Home() {
       setIsInitialized(true) // 立即设置为true，防止重复调用
       
       try {
-        const response = await fetch('http://localhost:8000/start_conversation', {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL}/start_conversation`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -102,7 +102,7 @@ export default function Home() {
 
     try {
       // 调用后端process_request接口
-      const response = await fetch('http://localhost:8000/process_request', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL}/process_request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +164,7 @@ export default function Home() {
     try {
       console.log('🎬 开始生成游戏场景，需求ID:', conversationStage.requirement_id)
       
-      const response = await fetch('http://localhost:8000/generate_complete_storyboards', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL}/generate_complete_storyboards`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
