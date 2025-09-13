@@ -109,7 +109,7 @@ export default function StoryboardPage() {
                 id: `${storyboard.stage_id}-${targetId}`,
                 source: storyboard.stage_id,
                 target: targetId,
-                label: description,
+                label: String(description),
                 style: { stroke: '#8b5cf6' },
                 labelStyle: { fill: '#8b5cf6', fontWeight: 600 },
               })
