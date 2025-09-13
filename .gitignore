@@ -4,3 +4,15 @@
 /.next
 /.env.local
 /backend/.env
+
+# API测试文件（包含密钥）
+test_stable_audio.py
+requirements_audio.txt
+
+# 生成的音频文件
+/generated_audio/
+
+# Python缓存文件
+__pycache__/
+*.pyc
+*.pyo

@@ -10,6 +10,7 @@ import json
 import os
 import uuid
 import concurrent.futures
+import requests
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 from database_client import db_client
@@ -253,11 +254,11 @@ class SceneGenerator:
             return None
     
     def _parse_framework_response(self, raw_response: str) -> Tuple[Optional[Dict], Optional[List[Dict]]]:
-        """解析AI响应，分离RPG框架和关卡数据"""
+        """解析AI响应，分离RPG框架和关卡数据，增强错误处理"""
         try:
-            # 清理响应内容
+            # 第一步：清理响应内容
             cleaned_output = raw_response.strip()
-            
+
             # 移除markdown代码块标记
             if cleaned_output.startswith("```json"):
                 cleaned_output = cleaned_output[7:]
@@ -265,32 +266,52 @@ class SceneGenerator:
                 cleaned_output = cleaned_output[3:]
             if cleaned_output.endswith("```"):
                 cleaned_output = cleaned_output[:-3]
-                
+
             cleaned_output = cleaned_output.strip()
-            
-            # 解析JSON
-            framework_data = json.loads(cleaned_output)
-            
-            # 分离RPG框架和关卡数据
+
+            # 第二步：尝试直接解析
+            try:
+                framework_data = json.loads(cleaned_output)
+            except json.JSONDecodeError as first_error:
+                print(f"⚠️ RPG框架JSON解析失败，尝试修复: {first_error}")
+
+                # 尝试修复JSON格式
+                fixed_json = self._fix_json_format(cleaned_output)
+                if fixed_json:
+                    try:
+                        framework_data = json.loads(fixed_json)
+                    except json.JSONDecodeError as second_error:
+                        print(f"⚠️ 修复后仍然解析失败，尝试AI修复: {second_error}")
+                        # 使用AI修复
+                        framework_data = self._regenerate_valid_json(raw_response)
+                        if not framework_data:
+                            return None, None
+                else:
+                    print(f"❌ JSON修复失败")
+                    return None, None
+
+            # 第三步：分离RPG框架和关卡数据
             rpg_framework = framework_data.get("整体rpg故事框架", {})
             stages_list = []
-            
+
             # 提取所有关卡数据
             for key, value in framework_data.items():
                 if key.startswith("关卡") and isinstance(value, dict):
                     stages_list.append(value)
-            
+
             # 按关卡编号排序
             stages_list.sort(key=lambda x: x.get("关卡编号", "node_0"))
-            
+
+            if not rpg_framework:
+                print("⚠️ 未找到RPG框架数据")
+            if not stages_list:
+                print("⚠️ 未找到关卡数据")
+
             return rpg_framework, stages_list
-            
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON解析失败: {e}")
-            print(f"原始响应前500字符: {raw_response[:500]}")
-            return None, None
+
         except Exception as e:
             print(f"❌ 解析响应失败: {e}")
+            print(f"原始响应前500字符: {raw_response[:500]}")
             return None, None
     
     def _save_to_database(self, rpg_framework: Dict, stages_list: List[Dict], requirement_id: str) -> Optional[str]:
@@ -425,12 +446,12 @@ class SceneGenerator:
 
         # 使用ThreadPoolExecutor进行并行处理
         storyboards_list = []
-        max_workers = min(5, len(stages_list))  # 最多5个并行线程，或关卡数量
+        max_workers = min(10, len(stages_list))  # 最多5个并行线程，或关卡数量
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 提交所有任务
+            # 提交所有任务 - 使用新的完整内容生成函数
             future_to_index = {
-                executor.submit(self._generate_single_storyboard_parallel, args): args[0]
+                executor.submit(self._generate_complete_content_parallel, args): args[0]
                 for args in args_list
             }
 
@@ -447,7 +468,17 @@ class SceneGenerator:
         # 按stage_index排序，确保顺序正确
         storyboards_list.sort(key=lambda x: x['stage_index'])
 
-        print(f"\n📊 故事板并行生成完成: {len(storyboards_list)}/{len(stages_list)} 个关卡成功")
+        # 统计生成结果
+        total_success = len(storyboards_list)
+        storyboard_success = sum(1 for item in storyboards_list if item.get('generation_status', {}).get('storyboard') == 'success')
+        image_success = sum(1 for item in storyboards_list if item.get('generation_status', {}).get('image') == 'success')
+        dialogue_success = sum(1 for item in storyboards_list if item.get('generation_status', {}).get('dialogue') == 'success')
+
+        print(f"\n📊 完整内容并行生成完成:")
+        print(f"   ✅ 关卡总数: {total_success}/{len(stages_list)}")
+        print(f"   📝 故事板: {storyboard_success}/{len(stages_list)}")
+        print(f"   🎨 图像: {image_success}/{len(stages_list)}")
+        print(f"   💬 对话: {dialogue_success}/{len(stages_list)}")
         
         return rpg_framework, stages_list, storyboards_list
     
@@ -499,9 +530,9 @@ class SceneGenerator:
             return None
     
     def _parse_storyboard_response(self, raw_response: str) -> Optional[Dict]:
-        """解析故事板响应"""
+        """解析故事板响应，增强错误处理和修复机制"""
         try:
-            # 清理响应内容
+            # 第一步：清理响应内容
             cleaned_output = raw_response.strip()
 
             # 移除markdown代码块标记
@@ -514,32 +545,245 @@ class SceneGenerator:
 
             cleaned_output = cleaned_output.strip()
 
-            # 解析JSON
-            return json.loads(cleaned_output)
+            # 第二步：尝试直接解析
+            try:
+                return json.loads(cleaned_output)
+            except json.JSONDecodeError as first_error:
+                print(f"⚠️ 首次JSON解析失败，尝试修复: {first_error}")
 
-        except json.JSONDecodeError as e:
-            print(f"❌ 故事板JSON解析失败: {e}")
-            print(f"原始响应前200字符: {raw_response[:200]}")
-            return None
+                # 第三步：尝试修复常见JSON错误
+                fixed_json = self._fix_json_format(cleaned_output)
+                if fixed_json:
+                    try:
+                        return json.loads(fixed_json)
+                    except json.JSONDecodeError as second_error:
+                        print(f"⚠️ 修复后仍然解析失败: {second_error}")
+
+                # 第四步：尝试使用AI重新生成格式正确的JSON
+                return self._regenerate_valid_json(raw_response)
+
         except Exception as e:
             print(f"❌ 解析故事板响应失败: {e}")
+            print(f"原始响应前500字符: {raw_response[:500]}")
             return None
 
-    def _generate_single_storyboard_parallel(self, args: tuple) -> Optional[Dict]:
-        """并行处理单个故事板生成的包装函数"""
+    def _fix_json_format(self, json_string: str) -> Optional[str]:
+        """尝试修复常见的JSON格式错误"""
+        try:
+            # 1. 处理末尾缺少逗号或括号的问题
+            if not json_string.strip().endswith('}'):
+                json_string = json_string.strip() + '}'
+
+            # 2. 修复可能的换行问题
+            lines = json_string.split('\n')
+            fixed_lines = []
+
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if line and not line.startswith('"') and not line.startswith('{') and not line.startswith('}'):
+                    # 可能是接续的内容
+                    if fixed_lines and not fixed_lines[-1].endswith(',') and not fixed_lines[-1].endswith('{'):
+                        fixed_lines[-1] = fixed_lines[-1] + ' ' + line
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+
+            # 3. 确保JSON结构完整
+            fixed_json = '\n'.join(fixed_lines)
+
+            # 4. 简单的括号匹配检查
+            open_braces = fixed_json.count('{')
+            close_braces = fixed_json.count('}')
+            if open_braces > close_braces:
+                fixed_json += '}' * (open_braces - close_braces)
+
+            return fixed_json
+
+        except Exception as e:
+            print(f"❌ JSON修复失败: {e}")
+            return None
+
+    def _regenerate_valid_json(self, original_response: str) -> Optional[Dict]:
+        """使用AI重新生成格式正确的JSON"""
+        try:
+            print("🔄 尝试使用AI修复JSON格式...")
+
+            fix_prompt = f"""
+请修复以下JSON格式错误，返回格式正确的JSON：
+
+原始内容：
+{original_response[:1000]}...
+
+要求：
+1. 确保JSON格式完全正确
+2. 保持原有的内容不变，只修复格式
+3. 确保所有字段都有正确的值
+4. 只返回JSON，不要其他说明
+
+修复后的JSON：
+"""
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "你是JSON格式修复专家，只返回格式正确的JSON，不添加任何解释。"},
+                    {"role": "user", "content": fix_prompt}
+                ],
+                temperature=0,
+                max_tokens=2000
+            )
+
+            fixed_response = response.choices[0].message.content.strip()
+
+            # 清理AI回复
+            if fixed_response.startswith("```json"):
+                fixed_response = fixed_response[7:]
+            if fixed_response.startswith("```"):
+                fixed_response = fixed_response[3:]
+            if fixed_response.endswith("```"):
+                fixed_response = fixed_response[:-3]
+
+            fixed_response = fixed_response.strip()
+
+            # 尝试解析修复后的JSON
+            return json.loads(fixed_response)
+
+        except Exception as e:
+            print(f"❌ AI修复JSON失败: {e}")
+            return None
+
+    def _generate_image(self, image_prompt: Dict, stage_id: str) -> Optional[str]:
+        """生成单个关卡的图像"""
+        try:
+            # 构建完整的提示词
+            parts = []
+            if image_prompt.get('场景描述'):
+                parts.append(f"Scene: {image_prompt['场景描述']}")
+            if image_prompt.get('视觉风格'):
+                parts.append(f"Style: {image_prompt['视觉风格']}")
+            if image_prompt.get('角色描述'):
+                parts.append(f"Characters: {image_prompt['角色描述']}")
+            if image_prompt.get('构图要求'):
+                parts.append(f"Composition: {image_prompt['构图要求']}")
+            if image_prompt.get('技术参数'):
+                parts.append(f"Technical: {image_prompt['技术参数']}")
+
+            full_prompt = ', '.join(parts)
+
+            print(f"🎨 正在为 {stage_id} 生成图像...")
+
+            # 调用OpenAI DALL-E 3 API
+            response = requests.post(
+                'https://api.openai.com/v1/images/generations',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {os.getenv("OPENAI_API_KEY")}',
+                },
+                json={
+                    "model": "dall-e-3",
+                    "prompt": f"pixel art RPG style, high resolution game art, {full_prompt}",
+                    "n": 1,
+                    "size": "1024x1024",
+                    "quality": "standard",
+                    "response_format": "url"
+                }
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                image_url = data.get('data', [{}])[0].get('url')
+                if image_url:
+                    print(f"✅ {stage_id} 图像生成成功")
+                    return image_url
+                else:
+                    print(f"❌ {stage_id} 图像生成失败：未返回图片URL")
+                    return None
+            else:
+                print(f"❌ {stage_id} 图像生成失败：{response.status_code}")
+                return None
+
+        except Exception as e:
+            print(f"❌ {stage_id} 图像生成异常: {e}")
+            return None
+
+    def _generate_dialogue(self, storyboard_data: Dict, rpg_framework: Dict, stage_data: Dict, subject: str, grade: str) -> Optional[str]:
+        """生成单个关卡的对话"""
+        try:
+            stage_id = stage_data.get('关卡编号', '')
+            print(f"💬 正在为 {stage_id} 生成对话...")
+
+            # 构建对话生成的prompt（基于现有API逻辑）
+            characters = storyboard_data.get('人物档案', {})
+            dialogue = storyboard_data.get('人物对话', {})
+            script = storyboard_data.get('剧本', {})
+
+            dialogue_prompt = f"""
+你是专业的剧情驱动对话优化师。基于已生成的storyboard框架，对现有对话进行深度优化和扩展，生成完整的8-15轮沉浸式冒险对话。
+
+【场景设定】
+- 场景名称：{stage_data.get('场景名称', '')}
+- 学科领域：{subject} ({grade}年级)
+- 教学目标：{stage_data.get('教学目标', '')}
+
+【已建立的角色档案】
+- 主角：{characters.get('主角', {}).get('角色名', '主角')}
+  外貌：{characters.get('主角', {}).get('外貌', '')}
+  性格：{characters.get('主角', {}).get('性格', '')}
+
+- NPC：{characters.get('NPC', {}).get('角色名', 'NPC')}
+  外貌：{characters.get('NPC', {}).get('外貌', '')}
+  性格：{characters.get('NPC', {}).get('性格', '')}
+
+【现有故事框架】
+剧情背景：{script.get('旁白', '')}
+核心情节：{script.get('情节描述', '')}
+互动机制：{script.get('互动设计', '')}
+
+【现有对话素材】
+开场对话：{dialogue.get('开场对话', [])}
+探索对话：{dialogue.get('探索对话', dialogue.get('学习对话', []))}
+互动解谜环节：{dialogue.get('互动解谜环节', dialogue.get('互动问答环节', {}))}
+
+请生成8-15轮完整的沉浸式对话，包含完整的互动解谜环节。
+"""
+
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": dialogue_prompt}],
+                temperature=0.7,
+                max_tokens=1500
+            )
+
+            generated_dialogue = response.choices[0].message.content
+            if generated_dialogue:
+                print(f"✅ {stage_id} 对话生成成功")
+                return generated_dialogue
+            else:
+                print(f"❌ {stage_id} 对话生成失败")
+                return None
+
+        except Exception as e:
+            print(f"❌ {stage_id} 对话生成异常: {e}")
+            return None
+
+    def _generate_complete_content_parallel(self, args: tuple) -> Optional[Dict]:
+        """并行处理单个关卡的完整内容生成：storyboard + image + dialogue"""
         i, stage_data, rpg_framework, subject, grade, interaction_requirements = args
         stage_name = stage_data.get('关卡名称', f'关卡{i+1}')
+        stage_id = stage_data.get("关卡编号", f"node_{i+1}")
 
-        print(f"🎬 [线程{i+1}] 开始生成故事板: {stage_name}")
+        print(f"🎬 [线程{i+1}] 开始生成完整内容: {stage_name}")
 
         # 添加重试机制
         max_retries = 2
         for attempt in range(max_retries + 1):
             try:
                 if attempt > 0:
-                    print(f"🔄 [线程{i+1}] 第 {attempt+1} 次尝试生成故事板...")
+                    print(f"🔄 [线程{i+1}] 第 {attempt+1} 次尝试生成完整内容...")
 
-                # 生成单个关卡的故事板
+                # 1. 首先生成故事板
+                print(f"📝 [线程{i+1}] 步骤1/3: 生成故事板...")
                 storyboard_data = self._generate_single_storyboard(
                     rpg_framework,
                     stage_data,
@@ -548,29 +792,76 @@ class SceneGenerator:
                     interaction_requirements
                 )
 
-                if storyboard_data:
-                    storyboard_with_meta = {
-                        "stage_index": i + 1,
-                        "stage_name": stage_name,
-                        "stage_id": stage_data.get("关卡编号", f"node_{i+1}"),
-                        "storyboard": storyboard_data
-                    }
-                    print(f"✅ [线程{i+1}] 关卡《{stage_name}》故事板生成成功")
-                    return storyboard_with_meta
-                else:
+                if not storyboard_data:
                     if attempt < max_retries:
                         print(f"⚠️ [线程{i+1}] 故事板生成失败，准备重试...")
                         continue
                     else:
-                        print(f"❌ [线程{i+1}] 关卡《{stage_name}》故事板生成失败，已达最大重试次数")
+                        print(f"❌ [线程{i+1}] 故事板生成失败，终止该关卡")
                         return None
+
+                # 2. 并行生成图像和对话
+                print(f"🚀 [线程{i+1}] 步骤2/3: 并行生成图像和对话...")
+
+                # 使用嵌套的ThreadPoolExecutor进行子并行处理
+                image_url = None
+                generated_dialogue = None
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as sub_executor:
+                    # 提交图像生成任务
+                    image_future = None
+                    image_prompt = storyboard_data.get('图片提示词', {})
+                    if image_prompt:
+                        image_future = sub_executor.submit(self._generate_image, image_prompt, stage_id)
+
+                    # 提交对话生成任务
+                    dialogue_future = sub_executor.submit(
+                        self._generate_dialogue,
+                        storyboard_data,
+                        rpg_framework,
+                        stage_data,
+                        subject,
+                        grade
+                    )
+
+                    # 等待两个任务完成
+                    if image_future:
+                        try:
+                            image_url = image_future.result(timeout=120)  # 2分钟超时
+                        except Exception as e:
+                            print(f"⚠️ [线程{i+1}] 图像生成失败: {e}")
+
+                    try:
+                        generated_dialogue = dialogue_future.result(timeout=60)  # 1分钟超时
+                    except Exception as e:
+                        print(f"⚠️ [线程{i+1}] 对话生成失败: {e}")
+
+                # 3. 组装完整结果
+                print(f"📦 [线程{i+1}] 步骤3/3: 组装完整结果...")
+                complete_content = {
+                    "stage_index": i + 1,
+                    "stage_name": stage_name,
+                    "stage_id": stage_id,
+                    "storyboard": storyboard_data,
+                    "generated_image_url": image_url,
+                    "generated_dialogue": generated_dialogue,
+                    "generation_status": {
+                        "storyboard": "success",
+                        "image": "success" if image_url else "failed",
+                        "dialogue": "success" if generated_dialogue else "failed"
+                    }
+                }
+
+                success_count = sum(1 for status in complete_content["generation_status"].values() if status == "success")
+                print(f"✅ [线程{i+1}] 关卡《{stage_name}》完整内容生成完成 ({success_count}/3 成功)")
+                return complete_content
 
             except Exception as e:
                 if attempt < max_retries:
-                    print(f"⚠️ [线程{i+1}] 故事板生成异常: {e}，准备重试...")
+                    print(f"⚠️ [线程{i+1}] 完整内容生成异常: {e}，准备重试...")
                     continue
                 else:
-                    print(f"❌ [线程{i+1}] 关卡《{stage_name}》故事板生成异常: {e}，已达最大重试次数")
+                    print(f"❌ [线程{i+1}] 关卡《{stage_name}》完整内容生成异常: {e}，已达最大重试次数")
                     return None
 
         return None
@@ -685,15 +976,15 @@ STORYBOARD_PROMPT = """你是一名"剧情驱动教育游戏分镜设计师"。�
    - 失败和成功都对后续剧情产生影响，增强选择的意义感
    - 保持世界观一致性，避免破坏第四堵墙
 
-【输出格式】严格按照以下JSON结构：
+【输出格式】严格按照以下JSON结构，确保格式完全正确：
 
 {{
   "分镜基础信息": {{
     "分镜编号": "scene_{stage_id}",
     "分镜标题": "关卡{stage_number}-{scene_name}",
-    "场景类型": "...",
-    "时长估计": "...分钟",
-    "关键事件": "..."
+    "场景类型": "困境发现场景",
+    "时长估计": "8分钟",
+    "关键事件": "具体的事件描述"
   }},
   "人物档案": {{
     "主角": {{
@@ -787,7 +1078,17 @@ STORYBOARD_PROMPT = """你是一名"剧情驱动教育游戏分镜设计师"。�
 - **核心角色设定约束**：主角和NPC的人物形象必须与RPG框架中的角色设定完全一致，不得偏离。可根据剧情需要添加其他角色，但不能影响核心角色的设定一致性
 - **场景转换格式要求**：必须使用"目标节点ID: 选项描述"的格式，根据关卡数据中的"下一关选项"来生成
 - 如果是结束节点，"场景转换"字段可以省略
-- JSON格式必须正确，确保可以被解析
+
+**【JSON格式严格要求】**
+- 必须返回格式完全正确的JSON，不能有语法错误
+- 所有字符串必须用双引号包围
+- 对象和数组的语法必须正确
+- 不能有多余的逗号或缺少逗号
+- 确保所有大括号和中括号正确匹配
+- 字符串内的特殊字符必须正确转义
+- 不要在JSON之外添加任何说明文字
+
+**重要**：只返回JSON内容，不要添加markdown代码块标记或任何其他文字！
 
 请严格按照上述要求生成分镜脚本。"""
 

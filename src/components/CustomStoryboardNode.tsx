@@ -81,6 +81,14 @@ interface NodeData {
   teachingGoal?: string
   subject?: string
   grade?: string
+  // 新增：预生成的内容
+  preGeneratedImageUrl?: string
+  preGeneratedDialogue?: string
+  generationStatus?: {
+    storyboard: 'success' | 'failed'
+    image: 'success' | 'failed'
+    dialogue: 'success' | 'failed'
+  }
 }
 
 interface CustomStoryboardNodeProps {
@@ -90,10 +98,14 @@ interface CustomStoryboardNodeProps {
 const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => {
   const [showDialogue, setShowDialogue] = useState(false)
   const [showScript, setShowScript] = useState(false)
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+
+  // 优先使用预生成的图像，fallback 到手动生成
+  const [generatedImage, setGeneratedImage] = useState<string | null>(data.preGeneratedImageUrl || null)
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
-  const [generatedDialogue, setGeneratedDialogue] = useState<string | null>(null)
+
+  // 优先使用预生成的对话，fallback 到手动生成
+  const [generatedDialogue, setGeneratedDialogue] = useState<string | null>(data.preGeneratedDialogue || null)
   const [isGeneratingDialogue, setIsGeneratingDialogue] = useState(false)
   const [dialogueError, setDialogueError] = useState<string | null>(null)
 
@@ -199,18 +211,32 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       
       {/* 节点标题 */}
       <div className="p-3 border-b border-gray-200">
-        <h3 className="text-lg font-bold text-purple-700 mb-1">{data.stageId}-{data.sceneName}</h3>
-        <p className="text-xs text-gray-600">{data.sceneInfo.场景类型} | {data.sceneInfo.时长估计}</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h3 className="text-lg font-bold text-purple-700 mb-1">{data.stageId}-{data.sceneName}</h3>
+            <p className="text-xs text-gray-600">{data.sceneInfo.场景类型} | {data.sceneInfo.时长估计}</p>
+          </div>
+          {/* 生成状态指示器 */}
+          <div className="flex gap-1">
+            {data.generationStatus?.image === 'success' && (
+              <div className="text-xs bg-green-500 px-2 py-1 rounded text-white" title="图像已预生成">🎨</div>
+            )}
+            {data.generationStatus?.dialogue === 'success' && (
+              <div className="text-xs bg-green-500 px-2 py-1 rounded text-white" title="对话已预生成">💬</div>
+            )}
+          </div>
+        </div>
       </div>
       
       {/* 第一块：图片区域 */}
-      <div className="p-3 border-b border-gray-200 bg-gray-50 h-299">
+      <div className="p-3 border-b border-gray-200 bg-gray-50 h-96">
         {generatedImage ? (
           <div className="w-full h-full relative rounded overflow-hidden">
             <Image 
               src={generatedImage} 
               alt="Generated scene image" 
               fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               className="object-cover"
             />
             <button 
@@ -237,13 +263,16 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
                     '场景图片'
                   )}
                 </div>
-                <button 
+                <button
                   className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors disabled:bg-gray-400"
                   onClick={handleGenerateImage}
                   disabled={!data.imagePrompt}
                 >
-                  Generate Image
+                  {data.generationStatus?.image === 'failed' ? '重新生成图像' : 'Generate Image'}
                 </button>
+                {data.generationStatus?.image === 'failed' && (
+                  <div className="text-xs text-red-500 mt-1">预生成失败</div>
+                )}
               </>
             )}
           </div>
@@ -300,13 +329,21 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
           <h4 className="font-semibold text-gray-800 text-sm">对话</h4>
           <div className="flex gap-1">
             {!generatedDialogue && (
-              <button 
+              <button
                 className="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors disabled:bg-gray-400"
                 onClick={handleGenerateDialogue}
                 disabled={isGeneratingDialogue}
               >
-                {isGeneratingDialogue ? '生成中...' : '生成对话'}
+                {isGeneratingDialogue
+                  ? '生成中...'
+                  : data.generationStatus?.dialogue === 'failed'
+                    ? '重新生成对话'
+                    : '生成对话'
+                }
               </button>
+            )}
+            {data.generationStatus?.dialogue === 'failed' && !generatedDialogue && (
+              <div className="text-xs text-red-500 self-center">预生成失败</div>
             )}
             {generatedDialogue && (
               <button 

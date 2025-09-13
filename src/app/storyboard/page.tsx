@@ -50,6 +50,14 @@ interface StoryData {
     stage_id: string
     storyboard: StoryboardData
     teachingGoal?: string
+    // 新增：预生成的内容
+    generated_image_url?: string
+    generated_dialogue?: string
+    generation_status?: {
+      storyboard: 'success' | 'failed'
+      image: 'success' | 'failed'
+      dialogue: 'success' | 'failed'
+    }
   }>
 }
 
@@ -91,6 +99,10 @@ export default function StoryboardPage() {
             teachingGoal: storyboard.teachingGoal,
             subject: storyData.subject,
             grade: storyData.grade,
+            // 新增：预生成的内容
+            preGeneratedImageUrl: storyboard.generated_image_url,
+            preGeneratedDialogue: storyboard.generated_dialogue,
+            generationStatus: storyboard.generation_status,
           }
 
           newNodes.push({

@@ -1,2 +1,0 @@
-# Stable Audio API测试依赖
-requests>=2.31.0
