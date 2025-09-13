@@ -83,7 +83,7 @@ async def process_request(request: ProcessRequestModel):
             status_code=500,
             detail=f"处理请求失败: {str(e)}"
         )
- 
+
 @app.post("/generate_complete_storyboards", response_model=APIResponse)
 async def generate_complete_storyboards(request: GenerateStoryboardsRequest):
     """生成完整的RPG框架、关卡数据和所有故事板"""
