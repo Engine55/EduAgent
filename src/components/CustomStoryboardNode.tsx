@@ -26,20 +26,31 @@ interface NodeData {
       角色: string
       内容: string
     }>
-    互动问答环节?: {
-      互动类型: string
-      NPC: string
-      主角选项: {
-        说明?: string
-        选项A?: string
-        选项B?: string
-        正确答案: string
-        互动说明?: string
+    互动解谜环节?: {
+      困境描述: string
+      探索引导: string
+      尝试选项: {
+        方法1: string
+        方法2: string
+        方法3: string
       }
-      反馈机制: {
-        正确反馈: string
-        错误反馈: string
-        互动提示?: string
+      尝试结果: {
+        成功: {
+          immediate_result: string
+          npc_reaction: string
+          story_reward: string
+          relationship_change: string
+        }
+        部分成功: {
+          partial_result: string
+          new_clue: string
+          encouragement: string
+        }
+        失败: {
+          safe_failure: string
+          learning_clue: string
+          retry_guidance: string
+        }
       }
     }
     场景转换?: { [key: string]: string }
