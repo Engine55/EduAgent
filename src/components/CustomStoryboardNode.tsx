@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import Image from 'next/image'
 import { Handle, Position } from 'reactflow'
 
 interface NodeData {
@@ -206,10 +207,11 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       <div className="p-3 border-b border-gray-200 bg-gray-50 h-299">
         {generatedImage ? (
           <div className="w-full h-full relative rounded overflow-hidden">
-            <img 
+            <Image 
               src={generatedImage} 
               alt="Generated scene image" 
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
             />
             <button 
               className="absolute top-1 right-1 px-2 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors opacity-80"
@@ -340,7 +342,7 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
               </div>
             ) : (
               <div className="text-gray-500 text-center py-2">
-                点击"生成对话"按钮创建完整对话
+                点击&quot;生成对话&quot;按钮创建完整对话
               </div>
             )}
           </div>
