@@ -1,6 +1,5 @@
 {
   "/page": "app/page.js",
   "/storyboard/page": "app/storyboard/page.js",
-  "/api/generate-dialogue/route": "app/api/generate-dialogue/route.js",
-  "/api/generate-image/route": "app/api/generate-image/route.js"
+  "/api/generate-dialogue/route": "app/api/generate-dialogue/route.js"
 }

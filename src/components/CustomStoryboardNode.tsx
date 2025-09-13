@@ -29,24 +29,27 @@ interface NodeData {
     互动解谜环节?: {
       困境描述: string
       探索引导: string
-      尝试选项: {
-        方法1: string
-        方法2: string
-        方法3: string
+      考核设计: {
+        考核类型: string
+        题目描述: string
+        具体题目: string
+        选项设置: string
+        正确答案: string
+        答案解析: string
       }
-      尝试结果: {
-        成功: {
+      反馈机制: {
+        完全正确: {
           immediate_result: string
           npc_reaction: string
           story_reward: string
           relationship_change: string
         }
-        部分成功: {
+        部分正确: {
           partial_result: string
-          new_clue: string
+          hint_provision: string
           encouragement: string
         }
-        失败: {
+        完全错误: {
           safe_failure: string
           learning_clue: string
           retry_guidance: string
