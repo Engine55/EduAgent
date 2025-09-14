@@ -49,6 +49,7 @@ interface StoryData {
   grade?: string
   analysis_report?: string  // 添加需求分析报告
   story_framework?: string  // 添加故事框架
+  education_assessment_report?: any  // 添加教育达成度评估报告
   storyboards: Array<{
     stage_index: number
     stage_name: string

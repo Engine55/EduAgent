@@ -106,6 +106,13 @@ async def test_stage1_to_completion():
         if not final_result:
             raise Exception("未能获取最终结果")
 
+        # 调试：打印final_result的结构
+        print(f"\n调试信息:")
+        print(f"  final_result keys: {list(final_result.keys()) if final_result else 'None'}")
+        if final_result:
+            for key, value in final_result.items():
+                print(f"    {key}: {type(value)} - {'存在' if value else '空'}")
+
         # 提取三个目标值
         analysis_report = final_result.get('analysis_report', '')
         story_framework = final_result.get('story_framework', '')
