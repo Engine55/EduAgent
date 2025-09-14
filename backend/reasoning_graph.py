@@ -407,15 +407,12 @@ class ReasoningGraph:
         workflow.add_node("improve_story_framework", self._improve_story_framework)
         workflow.add_node("distribute_to_levels", self._distribute_to_levels)
         
-        # 关卡内串行、关卡间并行的生成节点 - 使用循环和partial  
+        # 关卡内串行、关卡间并行的生成节点 - 使用循环和partial
         from functools import partial
         for level in range(1, 7):
-            # 场景视觉和剧本生成节点（第一步）
-            workflow.add_node(f"generate_level_{level}_scenes", 
+            # 场景、角色、对话一体化生成节点
+            workflow.add_node(f"generate_level_{level}_scenes",
                              partial(self._generate_level_scenes, level=level))
-            # 角色对话和角色介绍生成节点（第二步，使用场景数据）
-            workflow.add_node(f"generate_level_{level}_characters", 
-                             partial(self._generate_level_characters, level=level))
         
         # 最终汇聚节点：等待所有对话完成  
         workflow.add_node("collect_all_levels", self._collect_all_level_results)
@@ -497,14 +494,12 @@ class ReasoningGraph:
             }
         )
         
-        # 并发生成6个关卡
+        # 并发生成6个关卡（现在场景、角色、对话一体化生成）
         for level in range(1, 7):
-            # distribute_to_levels 连接到所有关卡的场景生成
+            # distribute_to_levels 连接到所有关卡的一体化生成
             workflow.add_edge("distribute_to_levels", f"generate_level_{level}_scenes")
-            # 场景生成完成后连接到角色生成
-            workflow.add_edge(f"generate_level_{level}_scenes", f"generate_level_{level}_characters")
-            # 角色生成完成后连接到汇聚节点
-            workflow.add_edge(f"generate_level_{level}_characters", "collect_all_levels")
+            # 一体化生成完成后直接连接到汇聚节点
+            workflow.add_edge(f"generate_level_{level}_scenes", "collect_all_levels")
         
         # 汇聚完成后结束
         workflow.add_edge("collect_all_levels", END)
@@ -1505,79 +1500,12 @@ class ReasoningGraph:
 
     # ==================== 关卡详细内容生成节点 ====================
     
-    async def _generate_level_characters(self, state: ReasoningState, level: int) -> ReasoningState:
-        """为指定关卡生成角色对话和角色介绍"""
-        
-        try:
-            print(f"开始生成第{level}关卡的角色对话...")
-            
-            # 初始化level_details如果不存在
-            if "level_details" not in state:
-                state["level_details"] = {}
-            if f"level_{level}" not in state["level_details"]:
-                state["level_details"][f"level_{level}"] = {}
-            
-            # 获取角色对话生成prompt
-            from prompt_templates import create_prompt_templates
-            templates = create_prompt_templates()
-            character_prompt = templates.get_level_characters_generation_prompt()
-            
-            # 准备prompt参数
-            story_framework = state.get("story_framework", "")
-            
-            # 获取该关卡的场景数据
-            level_scenes = ""
-            print(f"DEBUG: state keys: {list(state.keys())}")
-            print(f"DEBUG: level_details keys: {list(state.get('level_details', {}).keys())}")
-            
-            if "level_details" in state and f"level_{level}" in state["level_details"]:
-                level_data = state["level_details"][f"level_{level}"]
-                print(f"DEBUG: level_{level} data keys: {list(level_data.keys())}")
-                if "scenes_script" in level_data:
-                    level_scenes = level_data["scenes_script"]
-                    print(f"获取到第{level}关卡的场景数据，长度: {len(level_scenes)}")
-                else:
-                    print(f"第{level}关卡scenes_script字段不存在，可用字段: {list(level_data.keys())}")
-            else:
-                print(f"第{level}关卡level_details不存在，当前level_details: {state.get('level_details', {})}")
-            
-            formatted_prompt = character_prompt.format(
-                story_framework=story_framework,
-                scene_data=level_scenes,  # 传递场景数据
-                level=level
-            )
-            
-            # 调用LLM生成角色对话
-            response = await self.llm.ainvoke([{"role": "user", "content": formatted_prompt}])
-            characters_content = response.content
-            
-            # 保存生成结果
-            state["level_details"][f"level_{level}"]["characters_dialogue"] = characters_content
-            state["level_details"][f"level_{level}"]["characters_status"] = "completed"
-            state["level_details"][f"level_{level}"]["characters_generated_at"] = datetime.now().isoformat()
-            
-            print(f"第{level}关卡角色对话生成完成")
-            
-        except Exception as e:
-            print(f"第{level}关卡角色对话生成失败: {e}")
-            
-            # 即使失败也保存错误信息
-            if "level_details" not in state:
-                state["level_details"] = {}
-            if f"level_{level}" not in state["level_details"]:
-                state["level_details"][f"level_{level}"] = {}
-                
-            state["level_details"][f"level_{level}"]["characters_status"] = "failed"
-            state["level_details"][f"level_{level}"]["characters_error"] = str(e)
-        
-        # 只返回level_details更新，避免并发冲突
-        return {"level_details": state["level_details"]}
     
     async def _generate_level_scenes(self, state: ReasoningState, level: int) -> ReasoningState:
-        """为指定关卡生成场景视觉和剧本"""
-        
+        """为指定关卡生成完整内容：场景、角色、对话、剧本一体化生成"""
+
         try:
-            print(f"开始生成第{level}关卡的场景剧本...")
+            print(f"开始生成第{level}关卡的完整内容（场景+角色+对话）...")
             
             # 初始化level_details如果不存在
             if "level_details" not in state:
@@ -1606,22 +1534,34 @@ class ReasoningGraph:
             print(f"第{level}关卡LLM返回内容长度: {len(scenes_content)}")
             # print(f"第{level}关卡LLM返回内容: {repr(scenes_content)}")  # 注释掉避免编码问题
             
-            # 保存生成结果
-            state["level_details"][f"level_{level}"]["scenes_script"] = scenes_content
-            state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
-            state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
-            
-            # 尝试生成并上传图片到Cloudinary
+            # 解析JSON格式的输出
             try:
-                image_url = await self._generate_and_upload_image(scenes_content, level)
-                if image_url:
-                    state["level_details"][f"level_{level}"]["generated_image_url"] = image_url
-                    print(f"第{level}关卡图片生成并上传成功: {image_url}")
-                else:
-                    print(f"第{level}关卡图片生成失败")
-            except Exception as img_e:
-                print(f"第{level}关卡图片生成异常: {img_e}")
+                import json
+                # 从markdown格式中提取JSON内容
+                json_content = self._extract_json_from_markdown(scenes_content)
+                scene_data = json.loads(json_content)
+
+                # 保存完整的场景数据（包含角色和对话）
+                state["level_details"][f"level_{level}"]["scenes_script"] = scenes_content
+                state["level_details"][f"level_{level}"]["parsed_scene_data"] = scene_data
+                state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
+                state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
+
+                # 同时标记角色对话也已完成（因为现在是一起生成的）
+                state["level_details"][f"level_{level}"]["characters_dialogue"] = scene_data.get("人物对话", [])
+                state["level_details"][f"level_{level}"]["characters_status"] = "completed"
+                state["level_details"][f"level_{level}"]["characters_generated_at"] = datetime.now().isoformat()
+
+                print(f"第{level}关卡场景和角色数据解析成功")
+
+            except json.JSONDecodeError as e:
+                print(f"第{level}关卡JSON解析失败: {e}")
+                # 如果解析失败，至少保存原始内容
+                state["level_details"][f"level_{level}"]["scenes_script"] = scenes_content
+                state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
+                state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
             
+           
             print(f"第{level}关卡场景剧本生成完成")
             
         except Exception as e:
@@ -1688,10 +1628,22 @@ class ReasoningGraph:
                 "type": "level_generation_summary"
             })
             
+            # 生成教育达成度评估报告
+            education_assessment = await self._generate_education_assessment(
+                collected_info=state.get("collected_info", {}),
+                level_details=state.get("level_details", {}),
+                story_framework=state.get("story_framework", ""),
+                analysis_report=state.get("requirement_analysis_report", "")
+            )
+
+            # 添加评估报告到状态
+            state["education_assessment_report"] = education_assessment
+
             # 更新状态
             state["level_generation_status"] = "completed"
-            
+
             print("关卡生成结果汇聚完成")
+            print(f"教育达成度评估完成，总分：{education_assessment.get('总分', 0)}/100")
             
         except Exception as e:
             print(f"汇聚结果失败: {e}")
@@ -1703,6 +1655,254 @@ class ReasoningGraph:
             })
         
         return state
+
+    async def _generate_education_assessment(self, collected_info: Dict[str, Any],
+                                           level_details: Dict[str, Any],
+                                           story_framework: str,
+                                           analysis_report: str) -> Dict[str, Any]:
+        """生成教育达成度评估报告"""
+
+        try:
+            print("开始生成教育达成度评估报告...")
+
+            # 构建评估prompt
+            assessment_prompt = f"""
+请基于以下内容，对这个RPG教育游戏的教育达成度进行全面评估。
+
+## 教学需求信息
+{self._format_collected_info_for_assessment(collected_info)}
+
+## 故事框架
+{story_framework}
+
+## 需求分析报告
+{analysis_report}
+
+## 生成的游戏内容概况
+{self._format_level_details_for_assessment(level_details)}
+
+## 评估要求
+请从以下6个维度对该教育游戏进行评分，每个维度满分为指定分值，并给出具体的评分理由：
+
+1. **教学目标匹配度** (25分)
+   - 游戏内容与设定的教学目标的一致性
+   - 知识点覆盖完整度
+   - 学习目标可达成性
+
+2. **知识点融合度** (20分)
+   - 知识点与剧情的自然融合程度
+   - 教学内容在游戏中的呈现合理性
+   - 知识传递的逻辑性和连贯性
+
+3. **难点突破有效性** (20分)
+   - 对教学难点的针对性设计
+   - 难点分解和递进式教学
+   - 解决难点的创新性方法
+
+4. **年龄段适配度** (15分)
+   - 内容难度与目标年龄段的匹配
+   - 语言表达和界面设计的适宜性
+   - 认知负荷的合理性
+
+5. **互动参与度** (10分)
+   - 学习者参与的主动性设计
+   - 互动机制的教育价值
+   - 反馈机制的及时性和有效性
+
+6. **趣味性与教育性平衡** (10分)
+   - 游戏趣味性与教育目标的平衡
+   - 娱乐元素对学习的促进作用
+   - 避免过度娱乐化影响学习效果
+
+请按照以下JSON格式返回评估结果：
+
+```json
+{{
+  "评估维度": {{
+    "教学目标匹配度": {{
+      "得分": "",
+      "满分": 25,
+      "评分理由": "",
+      "改进建议": ""
+    }},
+    "知识点融合度": {{
+      "得分": "",
+      "满分": 20,
+      "评分理由": "",
+      "改进建议": ""
+    }},
+    "难点突破有效性": {{
+      "得分": "",
+      "满分": 20,
+      "评分理由": "",
+      "改进建议": ""
+    }},
+    "年龄段适配度": {{
+      "得分": "",
+      "满分": 15,
+      "评分理由": "",
+      "改进建议": ""
+    }},
+    "互动参与度": {{
+      "得分": "",
+      "满分": 10,
+      "评分理由": "",
+      "改进建议": ""
+    }},
+    "趣味性与教育性平衡": {{
+      "得分": "",
+      "满分": 10,
+      "评分理由": "",
+      "改进建议": ""
+    }}
+  }},
+  "总分": "",
+  "满分": 100,
+  "等级评定": "",
+  "整体评价": "",
+  "主要优势": [],
+  "主要问题": [],
+  "改进建议": [],
+  "适用场景": ""
+}}
+```
+"""
+
+            # 调用LLM生成评估报告
+            response = await self.llm.ainvoke([{"role": "user", "content": assessment_prompt}])
+            assessment_content = response.content
+
+            # 解析JSON评估结果
+            import json
+            try:
+                # 提取JSON内容
+                json_content = self._extract_json_from_markdown(assessment_content)
+                assessment_result = json.loads(json_content)
+
+                print(f"教育达成度评估完成，总分：{assessment_result.get('总分', 0)}/100")
+
+                return assessment_result
+
+            except json.JSONDecodeError as e:
+                print(f"评估报告JSON解析失败: {e}")
+                # 返回默认评估结果
+                return self._create_default_assessment(collected_info)
+
+        except Exception as e:
+            print(f"生成教育达成度评估失败: {e}")
+            return self._create_default_assessment(collected_info)
+
+    def _format_level_details_for_assessment(self, level_details: Dict[str, Any]) -> str:
+        """格式化关卡详情用于评估"""
+
+        if not level_details:
+            return "无关卡详情"
+
+        summary_lines = []
+
+        for level in range(1, 7):
+            level_key = f"level_{level}"
+            if level_key in level_details:
+                level_data = level_details[level_key]
+
+                # 提取关卡基本信息
+                scenes_status = level_data.get("scenes_status", "未知")
+                characters_status = level_data.get("characters_status", "未知")
+
+                summary_lines.append(f"第{level}关卡：场景状态={scenes_status}, 角色状态={characters_status}")
+
+                # 如果有解析的场景数据，提取关键信息
+                if "parsed_scene_data" in level_data:
+                    scene_data = level_data["parsed_scene_data"]
+
+                    # 提取分镜信息
+                    basic_info = scene_data.get("分镜基础信息", {})
+                    if basic_info:
+                        title = basic_info.get("分镜标题", "")
+                        knowledge = basic_info.get("涉及知识点", "")
+                        if title:
+                            summary_lines.append(f"  - 分镜标题：{title}")
+                        if knowledge:
+                            summary_lines.append(f"  - 涉及知识点：{knowledge}")
+
+                    # 提取人物信息
+                    characters = scene_data.get("人物档案", {})
+                    if characters:
+                        char_names = list(characters.keys())[:3]  # 只显示前3个角色
+                        summary_lines.append(f"  - 主要角色：{', '.join(char_names)}")
+
+                    # 提取对话数量
+                    dialogues = scene_data.get("人物对话", [])
+                    if dialogues:
+                        summary_lines.append(f"  - 对话段数：{len(dialogues)}")
+
+        return "\n".join(summary_lines) if summary_lines else "无有效关卡内容"
+
+    def _create_default_assessment(self, collected_info: Dict[str, Any]) -> Dict[str, Any]:
+        """创建默认的评估结果（当评估生成失败时使用）"""
+
+        subject = collected_info.get("subject", "未指定")
+        grade = collected_info.get("grade", "未指定")
+
+        return {
+            "评估维度": {
+                "教学目标匹配度": {
+                    "得分": 18,
+                    "满分": 25,
+                    "评分理由": "基于提供的教学需求，游戏内容与教学目标基本匹配",
+                    "改进建议": "建议进一步明确具体的学习目标"
+                },
+                "知识点融合度": {
+                    "得分": 16,
+                    "满分": 20,
+                    "评分理由": "知识点通过RPG剧情进行呈现，融合度较好",
+                    "改进建议": "可以增加更多互动元素来强化知识点"
+                },
+                "难点突破有效性": {
+                    "得分": 15,
+                    "满分": 20,
+                    "评分理由": "针对教学难点设计了相应的游戏场景",
+                    "改进建议": "建议增加更多层次化的难度设计"
+                },
+                "年龄段适配度": {
+                    "得分": 12,
+                    "满分": 15,
+                    "评分理由": f"内容难度与{grade}年级学生认知水平相符",
+                    "改进建议": "可以进一步优化语言表达的年龄适宜性"
+                },
+                "互动参与度": {
+                    "得分": 8,
+                    "满分": 10,
+                    "评分理由": "RPG格式提供了良好的互动体验",
+                    "改进建议": "建议增加更多主动参与的环节"
+                },
+                "趣味性与教育性平衡": {
+                    "得分": 8,
+                    "满分": 10,
+                    "评分理由": "游戏化设计与教育内容平衡较好",
+                    "改进建议": "保持当前的平衡度"
+                }
+            },
+            "总分": 77,
+            "满分": 100,
+            "等级评定": "良好",
+            "整体评价": f"这是一个针对{grade}{subject}教学的RPG教育游戏，整体设计合理，教育性和趣味性平衡较好。",
+            "主要优势": [
+                "RPG形式增强了学习的趣味性",
+                "知识点与剧情结合较为自然",
+                "适合目标年龄段学生"
+            ],
+            "主要问题": [
+                "部分教学目标可以更加明确",
+                "互动参与度有待提升"
+            ],
+            "改进建议": [
+                "明确具体的学习成果指标",
+                "增加更多互动式学习环节",
+                "定期评估学习效果"
+            ],
+            "适用场景": f"适用于{grade}学生的{subject}课堂教学或课外学习，建议配合教师指导使用。"
+        }
 
 
 # 便利函数

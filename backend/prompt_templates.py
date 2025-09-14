@@ -873,111 +873,6 @@ class PromptTemplates:
             template=template
         )
 
-    def get_level_characters_generation_prompt(self) -> PromptTemplate:
-        """获取关卡角色对话生成模板"""
-        # 完整的对话生成Prompt
-
-        template = """【任务】：基于Story Framework的完整设计框架，结合Scene Data的场景剧本，生成符合关卡节奏的角色对话脚本
-
-        Story Framework内容：
-        {story_framework}
-
-        Scene Data内容：
-        {scene_data}
-
-        当前关卡：第{level}关卡
-
-        请以Story Framework为主要依据（包含教学目标、互动方式、情节故事线、角色设定等完整信息），结合Scene Data提供的场景描述和剧本内容，生成完整的角色对话脚本。
-
-        【节奏类型对话特点】
-
-        **紧张型关卡**
-        - 对话轮次：6-10轮（快节奏，直奔主题）
-        - 情绪状态：紧迫、担忧、专注、肾上腺素
-        - 对话特点：语速快、句子短、多感叹句、决断性强、少废话
-        - 知识融入：生存关键、精确计算、关键时刻、错误有后果
-
-        **探索型关卡**
-        - 对话轮次：8-12轮（中等节奏，逐步展开）
-        - 情绪状态：好奇、谨慎、兴奋发现、逐步理解
-        - 对话特点：描述性强、逐步揭示、启发思考、观察分析
-        - 知识融入：解谜工具、发现规律、理解机制、探索奥秘
-
-        **轻松型关卡**
-        - 对话轮次：10-18轮（慢节奏，充分互动交流）
-        - 情绪状态：愉快、放松、温馨、满足感
-        - 对话特点：温和亲切、幽默互动、鼓励性强、节奏舒缓、多闲聊
-        - 知识融入：自然交流、有趣游戏、轻松练习、友好帮助
-
-        【输出格式】
-
-        请严格按照以下JSON格式输出，确保是有效的JSON:
-
-        {{{{
-          "人物档案": {{
-            "主角": {{
-              "角色名": "[从Story Framework提取主角名称]",
-              "外貌": "[从Story Framework提取主角外貌描述]",
-              "性格": "[从Story Framework提取主角性格特点]",
-              "特殊能力": "[从Story Framework提取主角特殊能力]"
-            }},
-            "NPC": {{
-              "角色名": "[从Story Framework提取NPC名称]",
-              "外貌": "[从Story Framework提取NPC外貌描述]",
-              "性格": "[从Story Framework提取NPC性格特点]",
-              "作用": "[从Story Framework提取NPC在故事中的作用]"
-            }}
-          }},
-          "人物对话": [
-            {{
-              "轮次": 1,
-              "NPC": "[基于Story Framework的角色性格，结合Scene Data的场景氛围开场对话]",
-              "主角": "[符合Story Framework角色设定和当前场景氛围的回应]"
-            }},
-            {{
-              "轮次": 2,
-              "NPC": "[推进Story Framework故事线和Scene Data剧情的对话]",
-              "主角": "[体现Story Framework角色成长和场景互动的回应]"
-            }}
-          ]
-        }}}}
-
-        **互动解谜环节**
-        困境描述：[NPC基于Story Framework的情节设计和Scene Data的剧本描述当前困境]
-
-        探索引导：[NPC引导玩家观察Scene Data场景中的线索，发现解决思路]
-
-        考核设计：
-        - 考核类型：[严格按照Story Framework中指定的互动方式选择：选择题/填空题/拖拽排序/数字输入/操作模拟等]
-        - 题目描述：[将Story Framework的教学目标包装成谜题，放置在Scene Data的场景情境中]
-        - 具体题目：[明确的问题表述，体现Story Framework的知识点要求]
-        - 交互设置：[根据Story Framework的互动方式要求设计具体交互：
-          * 选择题：提供3-4个选项及其描述
-          * 填空题：说明填空位置和提示信息
-          * 拖拽题：说明拖拽元素和目标位置
-          * 数字输入：说明输入范围和格式要求
-          * 操作模拟：说明具体操作步骤和判断标准]
-        - 正确答案：[基于Story Framework教学要求的标准答案]
-        - 答案解析：[解释为什么正确，与Story Framework知识点的关联]
-
-        反馈机制：
-        - 完全正确：[体现Story Framework教学目标达成，营造Scene Data场景氛围的庆祝+剧情奖励+关系发展]
-        - 部分正确：[基于Story Framework教学要求的指导提示，保持Scene Data场景氛围的鼓励]  
-        - 完全错误：[提供Story Framework知识点相关的学习线索，维持Scene Data场景氛围的引导重试]
-
-        【质量标准】
-        - 严格按照Story Framework的教学目标、互动方式、角色设定、情节故事线进行设计
-        - 利用Scene Data的场景描述和剧本内容营造氛围和推进情节
-        - 对话要服务于Story Framework的教学目的
-        - 场景表现要体现Scene Data的视觉和剧情设计
-        - 确保Story Framework的完整性优先，Scene Data作为表现载体
-
-        请根据以上要求，以Story Framework为主导，结合Scene Data的场景剧本，为第{level}关卡生成完整的角色对话脚本。"""
-        
-        return PromptTemplate(
-            input_variables=["story_framework", "scene_data", "level"],
-            template=template
-        )
 
     def get_level_scenes_generation_prompt(self) -> PromptTemplate:
         """获取关卡场景剧本生成模板"""
@@ -1055,6 +950,32 @@ class PromptTemplates:
     "时长估计": "[根据节奏类型调整的时长]",
     "关键事件": "[符合场景氛围的具体事件描述]"
   }},
+  "人物档案": {{
+    "主角": {{
+      "角色名": "[从Story Framework提取主角名称]",
+      "外貌": "[从Story Framework提取主角外貌描述]",
+      "性格": "[从Story Framework提取主角性格特点]",
+      "特殊能力": "[从Story Framework提取主角特殊能力]"
+    }},
+    "NPC": {{
+      "角色名": "[从Story Framework提取NPC名称]",
+      "外貌": "[从Story Framework提取NPC外貌描述]",
+      "性格": "[从Story Framework提取NPC性格特点]",
+      "作用": "[从Story Framework提取NPC在故事中的作用]"
+    }}
+  }},
+  "人物对话": [
+    {{
+      "轮次": 1,
+      "NPC": "[基于Story Framework的角色性格，结合场景氛围开场对话]",
+      "主角": "[符合Story Framework角色设定和当前场景氛围的回应]"
+    }},
+    {{
+      "轮次": 2,
+      "NPC": "[推进Story Framework故事线和场景剧情的对话]",
+      "主角": "[体现Story Framework角色成长和场景互动的回应]"
+    }}
+  ],
   "图片生成提示词": {{
     "视觉风格": "[与Story Framework世界观和场景氛围匹配的艺术风格]",
     "场景描述": "[根据节奏类型调整的具体视觉氛围，包括色调、光影、构图特点]",

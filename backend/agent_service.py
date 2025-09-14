@@ -192,6 +192,7 @@ class AgentService:
                 "collected_info": final_state.get("collected_info", {}),
                 "analysis_report": analysis_report,
                 "story_framework": story_framework,
+                "education_assessment_report": final_state.get("education_assessment_report", {}),  # 教育达成度评估报告
                 "level_details": level_details,  # 原始关卡数据（调试用）
                 "storyboards_data": storyboards_data,  # 转换后的前端格式数据
                 "level_generation_status": level_generation_status,
@@ -281,6 +282,7 @@ class AgentService:
                 "requirement_id": requirement_id,
                 "story_framework": story_framework,
                 "analysis_report": final_state.get("requirement_analysis_report", ""),  # 添加分析报告
+                "education_assessment_report": final_state.get("education_assessment_report", {}),  # 添加教育达成度评估报告
                 "storyboards_data": storyboards_data,
                 "collected_info": final_state.get("collected_info", {}),
                 "level_details": final_state.get("level_details", {}),
@@ -361,17 +363,19 @@ class AgentService:
                     except Exception as e:
                         print(f"⚠️ 第{level}关卡角色JSON解析失败: {e}")
                 
-                # 合并scene和character数据
+                # 现在scene_json包含完整数据（包括角色和对话）
                 storyboard_data = {}
-                
-                # 从scene_json提取数据
+
+                # 从scene_json提取所有数据
                 if scene_json:
                     storyboard_data["分镜基础信息"] = scene_json.get("分镜基础信息", {})
+                    storyboard_data["人物档案"] = scene_json.get("人物档案", {})
+                    storyboard_data["人物对话"] = scene_json.get("人物对话", [])
                     storyboard_data["图片提示词"] = scene_json.get("图片生成提示词", {})
                     storyboard_data["剧本"] = scene_json.get("剧本", {})
-                
-                # 从character_json提取数据
-                if character_json:
+
+                # 如果scene_json中没有角色数据，再尝试从character_json获取（向后兼容）
+                if character_json and not storyboard_data.get("人物档案"):
                     storyboard_data["人物档案"] = character_json.get("人物档案", {})
                     storyboard_data["人物对话"] = character_json.get("人物对话", [])
                 
@@ -391,9 +395,9 @@ class AgentService:
                     # 可选字段
                     "teachingGoal": collected_info.get("teaching_goals", ["未指定"])[0] if collected_info.get("teaching_goals") else "未指定",
                     "generation_status": {
-                        "storyboard": "success" if (scene_json and character_json) else "failed",
-                        "scene": "success" if scene_json else "failed", 
-                        "dialogue": "success" if character_json else "failed"
+                        "storyboard": "success" if scene_json else "failed",
+                        "scene": "success" if scene_json else "failed",
+                        "dialogue": "success" if (scene_json and scene_json.get("人物对话")) else "failed"
                     }
                 }
                 
@@ -407,6 +411,7 @@ class AgentService:
                 "grade": collected_info.get("grade", "未知"),
                 "analysis_report": final_state.get("requirement_analysis_report", ""),  # 添加分析报告
                 "story_framework": final_state.get("story_framework", ""),  # 添加故事框架
+                "education_assessment_report": final_state.get("education_assessment_report", {}),  # 添加教育达成度评估报告
                 "storyboards": storyboards
             }
             

@@ -314,16 +314,21 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
       <div className="p-3 border-b border-gray-200">
         <h4 className="font-semibold text-gray-800 mb-2 text-sm">角色介绍</h4>
         <div className="space-y-2">
-          {data.characters.主角 && (
+          {data.characters?.主角 && (
             <div className="p-2 bg-blue-50 rounded text-xs">
               <div className="font-medium text-blue-700 mb-1">{data.characters.主角.角色名}</div>
               <div className="text-gray-600">{data.characters.主角.外貌}</div>
             </div>
           )}
-          {data.characters.NPC && (
+          {data.characters?.NPC && (
             <div className="p-2 bg-green-50 rounded text-xs">
               <div className="font-medium text-green-700 mb-1">{data.characters.NPC.角色名}</div>
               <div className="text-gray-600">{data.characters.NPC.外貌}</div>
+            </div>
+          )}
+          {!data.characters && (
+            <div className="text-xs text-gray-500 text-center py-2">
+              角色数据不可用
             </div>
           )}
         </div>

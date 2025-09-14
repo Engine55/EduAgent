@@ -244,6 +244,7 @@ export default function Home() {
           grade: storyboardsData.grade || storyData.grade,
           analysis_report: result.data.analysis_report,  // 添加需求分析报告
           story_framework: result.data.story_framework,  // 添加故事框架
+          education_assessment_report: result.data.education_assessment_report || storyboardsData.education_assessment_report,  // 添加教育达成度评估报告
           storyboards: optimizedStoryboards
         }
         

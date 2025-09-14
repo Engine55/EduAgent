@@ -70,6 +70,9 @@ export default function HistoryPage() {
           story_title: item.story_title,
           subject: item.subject,
           grade: item.grade,
+          analysis_report: result.data.analysis_report,
+          story_framework: result.data.story_framework,
+          education_assessment_report: result.data.education_assessment_report,
           storyboards: result.data.storyboards_data.storyboards || []
         }
         

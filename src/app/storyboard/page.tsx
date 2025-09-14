@@ -113,9 +113,25 @@ export default function StoryboardPage() {
             `生成时间：${new Date().toLocaleString()}\n` +
             `\n${'='.repeat(60)}\n\n` +
             storyData.story_framework
-          
+
           projectFolder?.file('故事框架设计.txt', frameworkContent)
           console.log('✅ 添加故事框架设计.txt')
+        }
+
+        // 添加教育达成度评估报告（JSON格式）
+        if (storyData.education_assessment_report) {
+          const assessmentData = {
+            项目信息: {
+              项目标题: storyData.story_title,
+              学科: storyData.subject || '未知',
+              年级: storyData.grade || '未知',
+              生成时间: new Date().toLocaleString()
+            },
+            ...storyData.education_assessment_report
+          }
+
+          projectFolder?.file('教育达成度评估报告.json', JSON.stringify(assessmentData, null, 2))
+          console.log('✅ 添加教育达成度评估报告.json')
         }
       }
       
