@@ -974,7 +974,7 @@ class ReasoningGraph:
             state["collected_info"], 
             state["sufficiency_score"]
         )
-        
+        print(f"the length of analysis_report is {len(str(analysis_report))}")
         # 更新状态
         state["messages"].append({
             "role": "assistant",

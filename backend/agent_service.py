@@ -161,14 +161,14 @@ class AgentService:
         
         # 获取最后一条助手消息作为回复
         assistant_message = ""
-        analysis_report = None
-        story_framework = None
         if messages:
             last_message = messages[-1]
             if last_message.get("role") == "assistant":
                 assistant_message = last_message.get("content", "")
-                analysis_report = last_message.get("analysis_report")  # 提取分析报告
-                story_framework = last_message.get("story_framework")  # 提取故事框架
+
+        # 从final_state中获取分析报告和故事框架
+        analysis_report = final_state.get("requirement_analysis_report")
+        story_framework = final_state.get("story_framework")
         
         # 提取关卡生成数据
         level_details = final_state.get("level_details", {})

@@ -283,7 +283,13 @@ export default function StoryboardPage() {
           }
         }
 
-        // 6. 背景音乐文件
+        // 6. 图片生成提示词文件
+        if (storyboard.storyboard.图片提示词) {
+          sceneFolder.file('图片生成提示词.txt', JSON.stringify(storyboard.storyboard.图片提示词, null, 2))
+          console.log(`✅ 添加图片生成提示词.txt`)
+        }
+
+        // 7. 背景音乐文件
         if (storyboard.storyboard.图片提示词) {
           try {
             console.log(`🎵 为 ${storyboard.stage_name} 生成背景音乐...`)
