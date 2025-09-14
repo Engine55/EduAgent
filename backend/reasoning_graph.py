@@ -35,6 +35,7 @@ class ReasoningState(TypedDict):
     # 基础会话状态
     messages: List[Dict[str, str]]
     user_id: str
+    requirement_id: str  # 预先确定的需求ID，避免并发问题
     
     # 需求收集状态
     collected_info: Dict[str, Any]
@@ -79,7 +80,12 @@ class ReasoningGraph:
     """基于StateGraph的智能推理图 - 合并了Stage1功能"""
     
     def __init__(self, db_client=None):
-        self.db_client = db_client or db_client
+        # 如果没有传入db_client，就使用全局的db_client
+        if db_client is not None:
+            self.db_client = db_client
+        else:
+            from database_client import db_client as global_db_client
+            self.db_client = global_db_client
         
         # 初始化LLM
         import os
@@ -315,7 +321,7 @@ class ReasoningGraph:
         response = await conversation.apredict(input="")
         return response.strip()
     
-    def save_final_requirements(self) -> Dict:
+    def save_final_requirements(self, state: ReasoningState) -> Dict:
         """保存最终收集的需求信息到数据库"""
         try:
             # 检查数据库连接
@@ -326,15 +332,14 @@ class ReasoningGraph:
                     "timestamp": datetime.now().isoformat()
                 }
             
-            # 生成唯一ID
+            # 使用预先确定的requirement_id
+            requirement_id = state["requirement_id"]
             timestamp = datetime.now().isoformat()
-            content_hash = hashlib.md5(json.dumps(self.collected_info, sort_keys=True).encode()).hexdigest()[:8]
-            requirement_id = f"requirement_{timestamp}_{content_hash}"
             
             # 准备保存的数据
             requirement_data = {
                 "id": requirement_id,
-                "user_id": "default_user",  # 简化为default
+                "user_id": state["user_id"],
                 "timestamp": timestamp,
                 "collected_info": self.collected_info,
                 "final_requirements": self.collected_info,  # 为了兼容性
@@ -342,9 +347,16 @@ class ReasoningGraph:
             }
             
             # 保存到数据库
-            save_success = self.db_client.save_requirement(requirement_data)
+            print(f"准备保存需求数据，ID: {requirement_id}")
+            save_success = self.db_client.save_requirement(
+                requirement_id=requirement_id,
+                user_id=state["user_id"], 
+                requirement_data=requirement_data
+            )
             
-            if save_success:
+            print(f"保存结果: {save_success}")
+            
+            if save_success.get("success"):
                 return {
                     "success": True,
                     "requirement_id": requirement_id,
@@ -354,12 +366,12 @@ class ReasoningGraph:
             else:
                 return {
                     "success": False,
-                    "message": "保存失败",
+                    "message": f"保存失败: {save_success.get('error', '未知错误')}",
                     "timestamp": timestamp
                 }
                 
         except Exception as e:
-            print(f"⚠️ 保存需求信息失败: {e}")
+            print(f"保存需求信息失败: {e}")
             return {
                 "success": False,
                 "message": f"保存失败: {str(e)}",
@@ -483,13 +495,13 @@ class ReasoningGraph:
             }
         )
         
-        # 审核通过后：关卡内串行（scene -> dialogue），关卡间并行
+        # 并发生成6个关卡
         for level in range(1, 7):
-            # 从distribute_to_levels并行分发到每个关卡的场景生成
+            # distribute_to_levels 连接到所有关卡的场景生成
             workflow.add_edge("distribute_to_levels", f"generate_level_{level}_scenes")
-            # 每个关卡的场景完成后生成对话
+            # 场景生成完成后连接到角色生成
             workflow.add_edge(f"generate_level_{level}_scenes", f"generate_level_{level}_characters")
-            # 每个关卡的对话完成后汇聚到collect_all_levels
+            # 角色生成完成后连接到汇聚节点
             workflow.add_edge(f"generate_level_{level}_characters", "collect_all_levels")
         
         # 汇聚完成后结束
@@ -506,10 +518,10 @@ class ReasoningGraph:
     def _decide_after_sufficiency_check(self, state: ReasoningState) -> str:
         """sufficiency检查后的路由决策"""
         if state.get("sufficiency_passed", False):
-            print("✅ 详细度检查通过，进入适宜性检查")
+            print("详细度检查通过，进入适宜性检查")
             return "sufficiency_passed"
         else:
-            print("❌ 详细度不足，需要更多信息")
+            print("详细度不足，需要更多信息")
             return "need_more_details"
     
     def _decide_after_fitness_check(self, state: ReasoningState) -> str:
@@ -517,10 +529,10 @@ class ReasoningGraph:
         fitness_concerns = state.get("fitness_concerns", [])
         
         if fitness_concerns:
-            print(f"⚠️ 发现适宜性问题: {len(fitness_concerns)}个")
+            print(f"发现适宜性问题: {len(fitness_concerns)}个")
             return "fitness_concerns"
         else:
-            print("✅ 适宜性检查通过，准备完成")
+            print("适宜性检查通过，准备完成")
             return "fitness_passed"
     
     def _should_proceed_with_input(self, state: ReasoningState) -> str:
@@ -537,7 +549,7 @@ class ReasoningGraph:
         if state["story_framework_approved"]:
             return "approved"
         elif state["story_iteration_count"] >= max_iterations:
-            print(f"⚠️ 已达最大迭代次数({max_iterations})，强制通过")
+            print(f"已达最大迭代次数({max_iterations})，强制通过")
             return "max_reached"
         else:
             return "continue_iteration"
@@ -546,12 +558,12 @@ class ReasoningGraph:
     
     async def _check_input_fitness(self, state: ReasoningState) -> ReasoningState:
         """检查用户输入的适宜性"""
-        print("🛡️ 检查输入适宜性...")
+        print("检查输入适宜性...")
         
         # 获取最新的用户输入
         user_messages = [msg for msg in state["messages"] if msg["role"] == "user"]
         if not user_messages:
-            print("❌ 没有找到用户输入")
+            print("没有找到用户输入")
             state["input_fitness_passed"] = False
             return state
             
@@ -566,10 +578,10 @@ class ReasoningGraph:
         state["input_fitness_score"] = fitness_result.get("fitness_score", 0)
         
         if state["input_fitness_passed"]:
-            print("✅ 输入适宜性检查通过")
+            print("输入适宜性检查通过")
         else:
             issues_count = len(fitness_result.get("issues", []))
-            print(f"❌ 输入适宜性检查未通过，发现{issues_count}个问题")
+            print(f"输入适宜性检查未通过，发现{issues_count}个问题")
             for issue in fitness_result.get("issues", []):
                 print(f"  - {issue.get('category', '未知')}: {issue.get('description', '无描述')}")
             
@@ -593,11 +605,11 @@ class ReasoningGraph:
             description = issue.get("description", "")
             suggestion = issue.get("suggestion", "")
             
-            message_parts.append(f"\n• **{category}**: {description}")
+            message_parts.append(f"\n- **{category}**: {description}")
             if suggestion:
                 message_parts.append(f"  建议: {suggestion}")
         
-        message_parts.append("\n\n🎯 请提供符合教育规范、逻辑合理且适合学生年龄的游戏设计需求。我将很高兴为您设计一个优秀的教育游戏！")
+        message_parts.append("\n\n请提供符合教育规范、逻辑合理且适合学生年龄的游戏设计需求。我将很高兴为您设计一个优秀的教育游戏！")
         
         return "".join(message_parts)
 
@@ -620,7 +632,7 @@ class ReasoningGraph:
             report = await self.llm.apredict(analysis_prompt)
             return report.strip()
         except Exception as e:
-            print(f"❌ 生成需求分析报告失败: {e}")
+            print(f"生成需求分析报告失败: {e}")
             # 返回基础报告
             return f"""RPG教育游戏需求分析报告
 
@@ -665,7 +677,7 @@ class ReasoningGraph:
             framework = await self.llm.apredict(framework_prompt)
             return framework.strip()
         except Exception as e:
-            print(f"❌ 生成故事框架失败: {e}")
+            print(f"生成故事框架失败: {e}")
             return f"""RPG故事框架生成失败
             
 【基础信息】
@@ -694,7 +706,7 @@ class ReasoningGraph:
             result = json.loads(json_content)
             return result
         except Exception as e:
-            print(f"❌ 故事框架审核失败: {e}")
+            print(f"故事框架审核失败: {e}")
             # 返回默认不通过的结果
             return {
                 "主线明确性": {
@@ -742,7 +754,7 @@ class ReasoningGraph:
             improved_framework = await self.llm.apredict(improvement_prompt)
             return improved_framework.strip()
         except Exception as e:
-            print(f"❌ 改进故事框架失败: {e}")
+            print(f"改进故事框架失败: {e}")
             return current_framework  # 返回原框架
 
     async def _extract_and_update_info(self, state: ReasoningState) -> ReasoningState:
@@ -774,7 +786,7 @@ class ReasoningGraph:
             return state
             
         except Exception as e:
-            print(f"❌ 信息提取失败: {e}")
+            print(f"信息提取失败: {e}")
             return state
     
     async def _determine_stage(self, state: ReasoningState) -> ReasoningState:
@@ -792,16 +804,16 @@ class ReasoningGraph:
             
             # 如果完成，设置ready_for_generation和保存需求
             if stage1_complete:
-                save_result = self.save_final_requirements()
+                save_result = self.save_final_requirements(state)
                 if save_result["success"]:
                     state["ready_for_generation"] = True
                     state["final_requirements"] = self.collected_info.copy()
-                    print(f"✅ 需求信息已保存: {save_result['requirement_id']}")
+                    print(f"需求信息已保存: {save_result['requirement_id']}")
             
             return state
             
         except Exception as e:
-            print(f"❌ 阶段判断失败: {e}")
+            print(f"阶段判断失败: {e}")
             return state
     
     def _decide_stage_routing(self, state: ReasoningState) -> str:
@@ -817,7 +829,7 @@ class ReasoningGraph:
     
     async def _check_info_completed(self, state: ReasoningState) -> ReasoningState:
         """检查基础信息完整性 - 简化版，主要用于初始化"""
-        print("🔍 检查基础信息完整性...")
+        print("检查基础信息完整性...")
         
         # 同步状态
         self.collected_info = state["collected_info"]
@@ -829,7 +841,7 @@ class ReasoningGraph:
     
     async def _generate_lack_response(self, state: ReasoningState) -> ReasoningState:
         """生成信息不足的回复 - 使用合并的Stage1逻辑"""
-        print("📝 生成信息不足回复...")
+        print("生成信息不足回复...")
         print(f"current collected_info is {self.collected_info}")
         
         # 同步状态
@@ -854,7 +866,7 @@ class ReasoningGraph:
     
     async def _assess_sufficiency(self, state: ReasoningState) -> ReasoningState:
         """评估信息详细度充足性"""
-        print("🔍 评估信息详细度...")
+        print("评估信息详细度...")
         
         collected_info = state["collected_info"]
         conversation_context = self._build_conversation_context(state["messages"])
@@ -867,7 +879,7 @@ class ReasoningGraph:
         state["overall_sufficiency"] = sufficiency_assessment["overall_score"]
         state["sufficiency_passed"] = sufficiency_assessment["overall_score"] >= state["sufficiency_threshold"]
         
-        print(f"📊 详细度评估完成:")
+        print(f"详细度评估完成:")
         for dimension, score in sufficiency_assessment["dimension_scores"].items():
             print(f"  {dimension}: {score:.1f}/100")
         print(f"  总体评分: {sufficiency_assessment['overall_score']:.1f}/100 (阈值: {state['sufficiency_threshold']})")
@@ -902,7 +914,7 @@ class ReasoningGraph:
         
     async def _check_fitness(self, state: ReasoningState) -> ReasoningState:
         """检查内容适宜性"""
-        print("🛡️ 检查内容适宜性...")
+        print("检查内容适宜性...")
         
         # 获取收集的信息
         collected_info = state["collected_info"]
@@ -917,16 +929,16 @@ class ReasoningGraph:
         state["fitness_passed"] = len(fitness_result.get("concerns", [])) == 0
         
         if state["fitness_passed"]:
-            print("✅ 适宜性检查通过")
+            print("适宜性检查通过")
         else:
             concern_count = len(state["fitness_concerns"])
-            print(f"⚠️ 发现{concern_count}个适宜性问题需要处理")
+            print(f"发现{concern_count}个适宜性问题需要处理")
         
         return state
         
     async def _generate_negotiate_response(self, state: ReasoningState) -> ReasoningState:
         """生成适宜性协商回复"""
-        print("🤝 生成适宜性协商回复...")
+        print("生成适宜性协商回复...")
         
         # 获取适宜性检查结果
         fitness_assessment = state["fitness_assessment"]
@@ -951,7 +963,7 @@ class ReasoningGraph:
         
     async def _generate_finish_response(self, state: ReasoningState) -> ReasoningState:
         """生成最终完成回复并启动故事框架生成"""
-        print("🎉 生成最终完成回复...")
+        print("生成最终完成回复...")
         
         # 生成最终确认回复
         final_response = await self._llm_generate_final_response(
@@ -982,7 +994,7 @@ class ReasoningGraph:
 
     async def _generate_story_framework(self, state: ReasoningState) -> ReasoningState:
         """生成RPG故事框架"""
-        print("📚 生成RPG故事框架...")
+        print("生成RPG故事框架...")
         
         # 生成故事框架
         story_framework = await self._llm_generate_story_framework(
@@ -994,12 +1006,12 @@ class ReasoningGraph:
         state["story_framework"] = story_framework
         state["story_iteration_count"] = state.get("story_iteration_count", 0) + 1
         
-        print(f"✅ 故事框架生成完成 (第{state['story_iteration_count']}次)")
+        print(f"故事框架生成完成 (第{state['story_iteration_count']}次)")
         return state
 
     async def _review_story_framework(self, state: ReasoningState) -> ReasoningState:
         """审核故事框架"""
-        print("🔍 审核故事框架质量...")
+        print("审核故事框架质量...")
         
         # 审核故事框架
         review_result = await self._llm_review_story_framework(
@@ -1013,7 +1025,7 @@ class ReasoningGraph:
         
         # 打印审核结果
         total_score = review_result.get("总分", 0)
-        print(f"📊 故事框架审核完成:")
+        print(f"故事框架审核完成:")
         print(f"  总分: {total_score}/100")
         
         dimensions = ["主线明确性", "内容一致性", "剧情连贯性", "教育融合度", "吸引力评估"]
@@ -1023,12 +1035,12 @@ class ReasoningGraph:
                 print(f"  {dim}: {score}/100")
         
         if state["story_framework_approved"]:
-            print("✅ 故事框架审核通过！")
+            print("故事框架审核通过！")
             # 标记为ready_for_generation，表示整个Stage1+故事框架生成完成
             state["ready_for_generation"] = True
             
             # 添加故事框架完成消息，包含story_framework用于下载
-            completion_message = f"🎉 RPG故事框架生成完成！\n\n📊 最终评分: {total_score}/100\n✅ 所有维度评分均达标，故事框架已通过审核。\n\n🎮 您现在可以下载完整的故事框架设计文档。"
+            completion_message = f"RPG故事框架生成完成！\n\n最终评分: {total_score}/100\n所有维度评分均达标，故事框架已通过审核。\n\n您现在可以下载完整的故事框架设计文档。"
             
             state["messages"].append({
                 "role": "assistant", 
@@ -1037,7 +1049,7 @@ class ReasoningGraph:
                 "story_framework": state["story_framework"]  # 添加故事框架用于下载
             })
         else:
-            print("❌ 故事框架需要改进")
+            print("故事框架需要改进")
             improvement_areas = review_result.get("重点改进方向", [])
             for area in improvement_areas:
                 print(f"  - {area}")
@@ -1046,7 +1058,7 @@ class ReasoningGraph:
 
     async def _improve_story_framework(self, state: ReasoningState) -> ReasoningState:
         """改进故事框架"""
-        print("🔧 改进故事框架...")
+        print("改进故事框架...")
         
         # 改进故事框架
         improved_framework = await self._llm_improve_story_framework(
@@ -1059,24 +1071,26 @@ class ReasoningGraph:
         state["story_framework"] = improved_framework
         state["story_iteration_count"] = state.get("story_iteration_count", 0) + 1
         
-        print(f"✅ 故事框架改进完成 (第{state['story_iteration_count']}次迭代)")
+        print(f"故事框架改进完成 (第{state['story_iteration_count']}次迭代)")
         return state
 
     async def _distribute_to_levels(self, state: ReasoningState) -> ReasoningState:
-        """分发到所有关卡生成 - 简单的路由节点"""
-        print("🚀 故事框架审核通过，开始并行生成6个关卡...")
+        """分发到所有关卡生成 - 并发生成6个关卡"""
+        print("故事框架审核通过，开始并发生成6个关卡...")
         
         # 初始化所有关卡的状态字段
+        if "level_details" not in state:
+            state["level_details"] = {}
+            
         for level in range(1, 7):
             level_key = f"level_{level}"
-            if level_key not in state.get("level_details", {}):
-                if "level_details" not in state:
-                    state["level_details"] = {}
+            if level_key not in state["level_details"]:
                 state["level_details"][level_key] = {
                     "scenes_status": "pending",
                     "characters_status": "pending"
                 }
         
+        print("已初始化6个关卡的状态，准备开始并发生成")
         return state
     
     # ==================== LLM辅助方法 ====================
@@ -1113,7 +1127,7 @@ class ReasoningGraph:
             result = json.loads(json_content)
             return result
         except Exception as e:
-            print(f"❌ 输入适宜性检查失败: {e}")
+            print(f"输入适宜性检查失败: {e}")
             # 返回默认拒绝的结果
             return {
                 "input_fitness": "rejected",
@@ -1145,7 +1159,7 @@ class ReasoningGraph:
             result = json.loads(json_content)
             return result
         except Exception as e:
-            print(f"❌ LLM评估失败: {e}")
+            print(f"LLM评估失败: {e}")
             # 返回默认的低分评估
             return {
                 "dimension_scores": {
@@ -1186,7 +1200,7 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(questions_prompt)
         except Exception as e:
-            print(f"❌ 生成补充问题失败: {e}")
+            print(f"生成补充问题失败: {e}")
             return f"为了更好地设计游戏，请提供更多关于{lowest_dimension}的详细信息。比如您希望游戏具体如何帮助学生学习？"
     
     async def _llm_check_fitness(self, collected_info: Dict[str, Any], 
@@ -1208,7 +1222,7 @@ class ReasoningGraph:
             result = json.loads(json_content)
             return result
         except Exception as e:
-            print(f"❌ 适宜性检查失败: {e}")
+            print(f"适宜性检查失败: {e}")
             # 返回默认通过的结果
             return {
                 "overall_fitness": "适宜",
@@ -1237,7 +1251,7 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(negotiate_prompt)
         except Exception as e:
-            print(f"❌ 生成协商回复失败: {e}")
+            print(f"生成协商回复失败: {e}")
             return "发现一些需要调整的地方，请修改设计以确保内容更适合目标学生群体。"
     
     async def _llm_generate_final_response(self, collected_info: Dict[str, Any],
@@ -1260,8 +1274,8 @@ class ReasoningGraph:
         try:
             return await self.llm.apredict(final_prompt)
         except Exception as e:
-            print(f"❌ 生成最终回复失败: {e}")
-            return "🎉 信息收集完成！您的教育游戏设计非常棒，我们现在开始生成具体的游戏内容。"
+            print(f"生成最终回复失败: {e}")
+            return "信息收集完成！您的教育游戏设计非常棒，我们现在开始生成具体的游戏内容。"
     
     def _extract_json_from_markdown(self, content: str) -> str:
         """从markdown代码块中提取JSON内容"""
@@ -1346,9 +1360,15 @@ class ReasoningGraph:
                                  collected_info: Dict[str, Any]) -> ReasoningState:
         """初始化推理状态"""
         
+        # 在初始化时就确定requirement_id，避免后续并发问题
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        content_hash = hashlib.md5(json.dumps(collected_info, sort_keys=True).encode()).hexdigest()[:8]
+        requirement_id = f"req_{timestamp}_{session_id[:8]}_{content_hash}"
+        
         return ReasoningState(
             messages=[],
             user_id=user_id,
+            requirement_id=requirement_id,  # 预先确定的requirement_id
             
             # 需求收集状态
             collected_info=collected_info,
@@ -1407,7 +1427,7 @@ class ReasoningGraph:
             }
             
         except Exception as e:
-            print(f"❌ StateGraph执行失败: {e}")
+            print(f"StateGraph执行失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -1459,7 +1479,7 @@ class ReasoningGraph:
             }
             
         except Exception as e:
-            print(f"❌ StateGraph持久化执行失败: {e}")
+            print(f"StateGraph持久化执行失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -1487,7 +1507,7 @@ class ReasoningGraph:
         """为指定关卡生成角色对话和角色介绍"""
         
         try:
-            print(f"🎭 开始生成第{level}关卡的角色对话...")
+            print(f"开始生成第{level}关卡的角色对话...")
             
             # 初始化level_details如果不存在
             if "level_details" not in state:
@@ -1505,19 +1525,19 @@ class ReasoningGraph:
             
             # 获取该关卡的场景数据
             level_scenes = ""
-            print(f"🔍 DEBUG: state keys: {list(state.keys())}")
-            print(f"🔍 DEBUG: level_details keys: {list(state.get('level_details', {}).keys())}")
+            print(f"DEBUG: state keys: {list(state.keys())}")
+            print(f"DEBUG: level_details keys: {list(state.get('level_details', {}).keys())}")
             
             if "level_details" in state and f"level_{level}" in state["level_details"]:
                 level_data = state["level_details"][f"level_{level}"]
-                print(f"🔍 DEBUG: level_{level} data keys: {list(level_data.keys())}")
+                print(f"DEBUG: level_{level} data keys: {list(level_data.keys())}")
                 if "scenes_script" in level_data:
                     level_scenes = level_data["scenes_script"]
-                    print(f"🎬 获取到第{level}关卡的场景数据，长度: {len(level_scenes)}")
+                    print(f"获取到第{level}关卡的场景数据，长度: {len(level_scenes)}")
                 else:
-                    print(f"⚠️ 第{level}关卡scenes_script字段不存在，可用字段: {list(level_data.keys())}")
+                    print(f"第{level}关卡scenes_script字段不存在，可用字段: {list(level_data.keys())}")
             else:
-                print(f"⚠️ 第{level}关卡level_details不存在，当前level_details: {state.get('level_details', {})}")
+                print(f"第{level}关卡level_details不存在，当前level_details: {state.get('level_details', {})}")
             
             formatted_prompt = character_prompt.format(
                 story_framework=story_framework,
@@ -1534,10 +1554,10 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["characters_status"] = "completed"
             state["level_details"][f"level_{level}"]["characters_generated_at"] = datetime.now().isoformat()
             
-            print(f"✅ 第{level}关卡角色对话生成完成")
+            print(f"第{level}关卡角色对话生成完成")
             
         except Exception as e:
-            print(f"❌ 第{level}关卡角色对话生成失败: {e}")
+            print(f"第{level}关卡角色对话生成失败: {e}")
             
             # 即使失败也保存错误信息
             if "level_details" not in state:
@@ -1548,14 +1568,14 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["characters_status"] = "failed"
             state["level_details"][f"level_{level}"]["characters_error"] = str(e)
         
-        # 只返回修改的字段，避免并发冲突
-        return {"level_details": state["level_details"]}
+        # 现在只有一个关卡，可以安全返回完整状态
+        return state
     
     async def _generate_level_scenes(self, state: ReasoningState, level: int) -> ReasoningState:
         """为指定关卡生成场景视觉和剧本"""
         
         try:
-            print(f"🎬 开始生成第{level}关卡的场景剧本...")
+            print(f"开始生成第{level}关卡的场景剧本...")
             
             # 初始化level_details如果不存在
             if "level_details" not in state:
@@ -1577,18 +1597,22 @@ class ReasoningGraph:
             )
             
             # 调用LLM生成场景剧本
+            print(f"第{level}关卡调用LLM，prompt长度: {len(formatted_prompt)}")
             response = await self.llm.ainvoke([{"role": "user", "content": formatted_prompt}])
             scenes_content = response.content
+            
+            print(f"第{level}关卡LLM返回内容长度: {len(scenes_content)}")
+            # print(f"第{level}关卡LLM返回内容: {repr(scenes_content)}")  # 注释掉避免编码问题
             
             # 保存生成结果
             state["level_details"][f"level_{level}"]["scenes_script"] = scenes_content
             state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
             state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
             
-            print(f"✅ 第{level}关卡场景剧本生成完成")
+            print(f"第{level}关卡场景剧本生成完成")
             
         except Exception as e:
-            print(f"❌ 第{level}关卡场景剧本生成失败: {e}")
+            print(f"第{level}关卡场景剧本生成失败: {e}")
             
             # 即使失败也保存错误信息
             if "level_details" not in state:
@@ -1599,14 +1623,14 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["scenes_status"] = "failed"
             state["level_details"][f"level_{level}"]["scenes_error"] = str(e)
         
-        # 只返回修改的字段，避免并发冲突
-        return {"level_details": state["level_details"]}
+        # 现在只有一个关卡，可以安全返回完整状态
+        return state
     
     async def _collect_all_level_results(self, state: ReasoningState) -> ReasoningState:
         """汇聚所有关卡的生成结果"""
         
         try:
-            print("📋 汇聚所有关卡生成结果...")
+            print("汇聚所有关卡生成结果...")
             
             # 统计完成情况
             completed_characters = 0
@@ -1634,13 +1658,13 @@ class ReasoningGraph:
             
             # 生成汇总报告
             summary_lines = [
-                "🎉 关卡详细内容生成完成！",
-                f"✅ 角色对话：{completed_characters}/6 个关卡完成",
-                f"✅ 场景剧本：{completed_scenes}/6 个关卡完成"
+                "关卡详细内容生成完成！",
+                f"角色对话：{completed_characters}/6 个关卡完成",
+                f"场景剧本：{completed_scenes}/6 个关卡完成"
             ]
             
             if failed_tasks:
-                summary_lines.append(f"❌ 失败任务：{', '.join(failed_tasks)}")
+                summary_lines.append(f"失败任务：{', '.join(failed_tasks)}")
             
             summary_message = "\n".join(summary_lines)
             
@@ -1654,14 +1678,14 @@ class ReasoningGraph:
             # 更新状态
             state["level_generation_status"] = "completed"
             
-            print("✅ 关卡生成结果汇聚完成")
+            print("关卡生成结果汇聚完成")
             
         except Exception as e:
-            print(f"❌ 汇聚结果失败: {e}")
+            print(f"汇聚结果失败: {e}")
             state["level_generation_status"] = "failed"
             state["messages"].append({
                 "role": "assistant",
-                "content": f"❌ 关卡内容生成汇聚失败：{str(e)}",
+                "content": f"关卡内容生成汇聚失败：{str(e)}",
                 "type": "error"
             })
         

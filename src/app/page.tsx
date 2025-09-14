@@ -268,6 +268,12 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-white">🎮 RPG教育游戏生成器</h1>
           <div className="flex gap-4">
             <Link 
+              href="/history" 
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+            >
+              历史记录
+            </Link>
+            <Link 
               href="/storyboard" 
               className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
             >

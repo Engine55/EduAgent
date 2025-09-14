@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-09-14T14:58:15.403732",
+  "level_details": {
+    "level_1": {
+      "scenes_status": "failed",
+      "characters_status": "pending",
+      "scenes_error": "'\\n    \"分镜编号\"'"
+    }
+  },
+  "story_framework": "\n【RPG故事框架】\n游戏标题：数学冒险王国\n背景设定：在魔法森林中，玩家扮演一位小勇士，通过解决数学问题来拯救森林中的动物朋友们。\n主线剧情：邪恶巫师用数学咒语困住了森林动物，玩家需要通过正确的加法运算来破解咒语。\n关卡设计：6个关卡，每关卡包含不同难度的10以内加法题目。\n角色设定：主角小勇士、森林动物NPC、邪恶巫师Boss。\n",
+  "collected_info": {
+    "subject": "数学",
+    "grade": "三年级",
+    "knowledge_points": [
+      "10以内加法"
+    ],
+    "teaching_goals": [
+      "掌握基础加法"
+    ],
+    "teaching_difficulties": [
+      "进位加法"
+    ],
+    "game_style": "RPG冒险",
+    "character_design": "卡通动物",
+    "world_setting": "魔法森林",
+    "plot_requirements": [
+      "闯关冒险"
+    ],
+    "interaction_requirements": [
+      "点击交互"
+    ]
+  }
+}

@@ -213,12 +213,12 @@ class PromptTemplates:
         # 基础信息部分
         basic_items = []
         if collected_info.get("subject"):
-            basic_items.append(f"✓ 学科：{collected_info['subject']}")
+            basic_items.append(f"- 学科：{collected_info['subject']}")
         if collected_info.get("grade"):
-            basic_items.append(f"✓ 年级：{collected_info['grade']}")
+            basic_items.append(f"- 年级：{collected_info['grade']}")
         if collected_info.get("knowledge_points"):
             points = "、".join(collected_info['knowledge_points'])
-            basic_items.append(f"✓ 知识点：{points}")
+            basic_items.append(f"- 知识点：{points}")
 
         if basic_items:
             formatted_sections.append("【基础信息】\n" + "\n".join(basic_items))
@@ -227,10 +227,10 @@ class PromptTemplates:
         teaching_items = []
         if collected_info.get("teaching_goals"):
             goals = "、".join(collected_info['teaching_goals'])
-            teaching_items.append(f"✓ 教学目标：{goals}")
+            teaching_items.append(f"- 教学目标：{goals}")
         if collected_info.get("teaching_difficulties"):
             difficulties = "、".join(collected_info['teaching_difficulties'])
-            teaching_items.append(f"✓ 教学难点：{difficulties}")
+            teaching_items.append(f"- 教学难点：{difficulties}")
 
         if teaching_items:
             formatted_sections.append("【教学需求】\n" + "\n".join(teaching_items))
@@ -238,11 +238,11 @@ class PromptTemplates:
         # 游戏设定部分
         gamestyle_items = []
         if collected_info.get("game_style"):
-            gamestyle_items.append(f"✓ 游戏风格：{collected_info['game_style']}")
+            gamestyle_items.append(f"- 游戏风格：{collected_info['game_style']}")
         if collected_info.get("character_design"):
-            gamestyle_items.append(f"✓ 角色设计：{collected_info['character_design']}")
+            gamestyle_items.append(f"- 角色设计：{collected_info['character_design']}")
         if collected_info.get("world_setting"):
-            gamestyle_items.append(f"✓ 世界背景：{collected_info['world_setting']}")
+            gamestyle_items.append(f"- 世界背景：{collected_info['world_setting']}")
 
         if gamestyle_items:
             formatted_sections.append("【游戏设定】\n" + "\n".join(gamestyle_items))
@@ -251,10 +251,10 @@ class PromptTemplates:
         scene_items = []
         if collected_info.get("plot_requirements"):
             plots = "、".join(collected_info['plot_requirements'])
-            scene_items.append(f"✓ 情节需求：{plots}")
+            scene_items.append(f"- 情节需求：{plots}")
         if collected_info.get("interaction_requirements"):
             interactions = "、".join(collected_info['interaction_requirements'])
-            scene_items.append(f"✓ 互动方式：{interactions}")
+            scene_items.append(f"- 互动方式：{interactions}")
 
         if scene_items:
             formatted_sections.append("【情节设计】\n" + "\n".join(scene_items))
@@ -269,7 +269,7 @@ class PromptTemplates:
 
         missing_items = []
         for field, description in missing_details.items():
-            missing_items.append(f"• {description}")
+            missing_items.append(f"- {description}")
 
         return "\n".join(missing_items)
 
@@ -571,16 +571,16 @@ class PromptTemplates:
 5. **下一步指引** - 告知用户如何进行下一步
 
 回复应该专业且充满期待，类似：
-"🎉 太棒了！经过我们的详细交流，教育游戏的需求收集已经完成！
+"太棒了！经过我们的详细交流，教育游戏的需求收集已经完成！
 
 让我总结一下我们收集到的信息：
 [关键信息总结]
 
 基于这些信息，我将为您生成：
-• 完整的游戏故事框架和剧情设计
-• 每个关卡的详细场景和任务设置  
-• 角色对话和互动内容
-• 教育目标的巧妙融入方式
+- 完整的游戏故事框架和剧情设计
+- 每个关卡的详细场景和任务设置
+- 角色对话和互动内容
+- 教育目标的巧妙融入方式
 
 请确认以上理解是否准确？如果没有问题，我就开始为您生成完整的教育游戏内容！"
 
@@ -891,19 +891,19 @@ class PromptTemplates:
 
         【节奏类型对话特点】
 
-        **🔥 紧张型关卡**
+        **紧张型关卡**
         - 对话轮次：6-10轮（快节奏，直奔主题）
         - 情绪状态：紧迫、担忧、专注、肾上腺素
         - 对话特点：语速快、句子短、多感叹句、决断性强、少废话
         - 知识融入：生存关键、精确计算、关键时刻、错误有后果
 
-        **🔍 探索型关卡**
+        **探索型关卡**
         - 对话轮次：8-12轮（中等节奏，逐步展开）
         - 情绪状态：好奇、谨慎、兴奋发现、逐步理解
         - 对话特点：描述性强、逐步揭示、启发思考、观察分析
         - 知识融入：解谜工具、发现规律、理解机制、探索奥秘
 
-        **🌸 轻松型关卡**
+        **轻松型关卡**
         - 对话轮次：10-18轮（慢节奏，充分互动交流）
         - 情绪状态：愉快、放松、温馨、满足感
         - 对话特点：温和亲切、幽默互动、鼓励性强、节奏舒缓、多闲聊
@@ -911,38 +911,36 @@ class PromptTemplates:
 
         【输出格式】
 
-        请严格按照以下JSON格式输出，确保是有效的JSON：
+        请严格按照以下JSON格式输出，确保是有效的JSON:
 
-        ```json
-        {
-          "人物档案": {
-            "主角": {
+        {{{{
+          "人物档案": {{
+            "主角": {{
               "角色名": "[从Story Framework提取主角名称]",
               "外貌": "[从Story Framework提取主角外貌描述]",
               "性格": "[从Story Framework提取主角性格特点]",
               "特殊能力": "[从Story Framework提取主角特殊能力]"
-            },
-            "NPC": {
+            }},
+            "NPC": {{
               "角色名": "[从Story Framework提取NPC名称]",
               "外貌": "[从Story Framework提取NPC外貌描述]",
               "性格": "[从Story Framework提取NPC性格特点]",
               "作用": "[从Story Framework提取NPC在故事中的作用]"
-            }
-          },
+            }}
+          }},
           "人物对话": [
-            {
+            {{
               "轮次": 1,
               "NPC": "[基于Story Framework的角色性格，结合Scene Data的场景氛围开场对话]",
               "主角": "[符合Story Framework角色设定和当前场景氛围的回应]"
-            },
-            {
+            }},
+            {{
               "轮次": 2,
               "NPC": "[推进Story Framework故事线和Scene Data剧情的对话]",
               "主角": "[体现Story Framework角色成长和场景互动的回应]"
-            }
+            }}
           ]
-        }
-        ```
+        }}}}
 
         **互动解谜环节**
         困境描述：[NPC基于Story Framework的情节设计和Scene Data的剧本描述当前困境]
@@ -991,7 +989,7 @@ class PromptTemplates:
 - 角色有真实的动机和目标，遇到真实的困难
 - 学习过程伪装成"发现世界规律"和"解谜探索"
 - 避免"老师出题"模式，采用"伙伴探索"模式
-🎭 节奏适配：根据关卡特点调整场景氛围和剧情节奏，创造丰富的情感体验层次
+节奏适配：根据关卡特点调整场景氛围和剧情节奏，创造丰富的情感体验层次
 
 【Story Framework】
 {story_framework}
@@ -1002,21 +1000,21 @@ class PromptTemplates:
 【关卡节奏识别与场景适配】
 首先分析关卡特点，判断应采用的场景氛围类型：
 
-**🔥 紧张型场景**（危机关卡、boss战、潜入、时间限制等）
+**紧张型场景**（危机关卡、boss战、潜入、时间限制等）
 - 场景氛围：高压、紧迫、危险感、肾上腺素飙升
 - 剧本节奏：快速推进、直奔主题、少描述多行动
 - 时长估计：5-8分钟（快节奏）
 - 视觉特点：暗色调、锐利构图、动态光影、紧张氛围
 - 知识融入：生死关头的精确计算、关键时刻的救命工具
 
-**🔍 探索型场景**（森林入口、新环境、调查线索、解谜等）
+**探索型场景**（森林入口、新环境、调查线索、解谜等）
 - 场景氛围：神秘、好奇、逐步发现、恍然大悟
 - 剧本节奏：中等推进、描述与行动并重、层层揭示
 - 时长估计：8-12分钟（中等节奏）
 - 视觉特点：柔和光线、平衡构图、渐变色调、探索氛围
 - 知识融入：解谜钥匙、发现规律、理解机制、探索奥秘
 
-**🌸 轻松型场景**（美丽场景、友善NPC、庆祝时刻、日常互动等）
+**轻松型场景**（美丽场景、友善NPC、庆祝时刻、日常互动等）
 - 场景氛围：温馨、愉快、放松、满足感、成长喜悦
 - 剧本节奏：舒缓推进、充分描述、情感交流、关系深化
 - 时长估计：10-15分钟（慢节奏）
@@ -1027,50 +1025,49 @@ class PromptTemplates:
 
 1) **氛围驱动的困境设计**：
    - 困境的紧迫程度要与场景类型匹配
-   - 🔥 紧张型：真实威胁、时间限制、高风险后果
-   - 🔍 探索型：谜题障碍、未知挑战、需要智慧
-   - 🌸 轻松型：友好困难、成长机会、温和挑战
+   - 紧张型：真实威胁、时间限制、高风险后果
+   - 探索型：谜题障碍、未知挑战、需要智慧
+   - 轻松型：友好困难、成长机会、温和挑战
 
 2) **节奏感知的剧情设计**：
    - 剧本内容要与场景氛围完全匹配
-   - 🔥 紧张型：快速推进的危机处理，高潮迭起
-   - 🔍 探索型：层层递进的发现过程，恍然大悟
-   - 🌸 轻松型：舒缓温馨的成长时刻，情感深化
+   - 紧张型：快速推进的危机处理，高潮迭起
+   - 探索型：层层递进的发现过程，恍然大悟
+   - 轻松型：舒缓温馨的成长时刻，情感深化
 
 3) **氛围一致的视觉设计**：
    - 图片提示词要体现场景氛围的视觉特征
-   - 🔥 紧张型：暗色调、锐利线条、动态构图、戏剧性光影
-   - 🔍 探索型：柔和光线、平衡构图、渐变色彩、神秘氛围
-   - 🌸 轻松型：明亮色调、温馨构图、柔和光线、和谐画面
+   - 紧张型：暗色调、锐利线条、动态构图、戏剧性光影
+   - 探索型：柔和光线、平衡构图、渐变色彩、神秘氛围
+   - 轻松型：明亮色调、温馨构图、柔和光线、和谐画面
 
 【输出格式】
 
-请严格按照以下JSON格式输出，确保是有效的JSON：
+请严格按照以下JSON格式输出，确保是有效的JSON:
 
-```json
-{
-  "分镜基础信息": {
-    "分镜编号": "scene_{level}",
-    "分镜标题": "关卡{level}-[场景名称]",
-    "场景节奏类型": "🔥紧张型 / 🔍探索型 / 🌸轻松型",
+
+{{{{
+  "分镜基础信息": {{
+    "分镜编号": "scene_{{level}}",
+    "分镜标题": "关卡{{level}}-[场景名称]",
+    "场景节奏类型": "紧张型 / 探索型 / 轻松型",
     "场景氛围": "[具体的氛围描述，体现节奏类型特点]",
     "时长估计": "[根据节奏类型调整的时长]",
     "关键事件": "[符合场景氛围的具体事件描述]"
-  },
-  "图片生成提示词": {
+  }},
+  "图片生成提示词": {{
     "视觉风格": "[与Story Framework世界观和场景氛围匹配的艺术风格]",
     "场景描述": "[根据节奏类型调整的具体视觉氛围，包括色调、光影、构图特点]",
     "角色描述": "[基于场景氛围的角色表现和动作状态]",
     "构图要求": "[根据场景节奏选择的最佳构图方式]",
     "技术参数": "高分辨率，16:9横版构图，适合移动端游戏界面展示"
-  },
-  "剧本": {
+  }},
+  "剧本": {{
     "旁白": "[根据场景节奏类型营造相应氛围的开场描述]",
     "情节描述": "[匹配场景氛围的完整冒险弧线，体现相应的节奏感和情感强度]",
     "互动设计": "[根据场景类型调整的学习机制包装方式，确保氛围一致性]"
-  }
-}
-```
+  }}
+}}}}
 
 【格式要求】
 - 所有字段必须填写，体现场景氛围特点

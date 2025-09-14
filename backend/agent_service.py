@@ -5,6 +5,7 @@ import uuid
 
 from reasoning_graph import create_reasoning_graph
 from info_extractor import create_info_extractor
+from database_client import DatabaseClient
 
 
 class AgentService:
@@ -21,6 +22,9 @@ class AgentService:
 
         # 信息提取器
         self.extractor = create_info_extractor(model_name)
+        
+        # 数据库客户端
+        self.db_client = DatabaseClient()
         
         # 维护collected_info状态
         self.collected_info = {
@@ -53,7 +57,7 @@ class AgentService:
             collected_info=self.collected_info
         )
 
-        welcome_message = """🎮 您好！我是教育游戏设计助手！
+        welcome_message = """您好！我是教育游戏设计助手！
 
 我将通过几个简单的问题来了解您的需求，然后为您生成一个完整的RPG教育游戏设计方案。
 
@@ -62,7 +66,7 @@ class AgentService:
 - 主要想教授哪个学科的内容？
 - 有特定的知识点需要重点关注吗？
 
-您可以一次回答所有问题，也可以逐一回答 😊"""
+您可以一次回答所有问题，也可以逐一回答"""
 
         return {
             "message": welcome_message,
@@ -175,12 +179,15 @@ class AgentService:
         
         # 根据生成状态确定返回格式
         if level_generation_status == "completed":
-            # 关卡生成完成
+            # 关卡生成完成，保存storyboard数据到数据库
+            requirement_id = final_state.get("requirement_id", self.session_id)
+            self._save_storyboard_to_database(requirement_id, storyboards_data, story_framework, final_state)
+            
             return {
                 "response": assistant_message,
                 "ready_for_stage2": True,
                 "stage": "all_levels_complete",
-                "requirement_id": self.session_id,
+                "requirement_id": requirement_id,
                 "final_requirements": final_state.get("final_requirements", {}),
                 "collected_info": final_state.get("collected_info", {}),
                 "analysis_report": analysis_report,
@@ -197,7 +204,7 @@ class AgentService:
                 "response": assistant_message,
                 "ready_for_stage2": True,
                 "stage": "stage1_complete",
-                "requirement_id": self.session_id,
+                "requirement_id": final_state.get("requirement_id", self.session_id),
                 "final_requirements": final_state.get("final_requirements", {}),
                 "collected_info": final_state.get("collected_info", {}),
                 "analysis_report": analysis_report,
@@ -261,6 +268,45 @@ class AgentService:
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _save_storyboard_to_database(self, requirement_id: str, storyboards_data: dict, story_framework: str, final_state: dict) -> bool:
+        """保存storyboard数据到数据库"""
+        try:
+            if not self.db_client:
+                print("数据库客户端未初始化，无法保存storyboard数据")
+                return False
+            
+            # 准备完整的storyboard数据
+            story_data = {
+                "requirement_id": requirement_id,
+                "story_framework": story_framework,
+                "storyboards_data": storyboards_data,
+                "collected_info": final_state.get("collected_info", {}),
+                "level_details": final_state.get("level_details", {}),
+                "level_generation_status": "completed",
+                "generated_at": self._get_timestamp()
+            }
+            
+            # 生成story_id（基于requirement_id）
+            story_id = f"story_{requirement_id}"
+            
+            # 保存到数据库
+            result = self.db_client.save_story(
+                story_id=story_id,
+                requirement_id=requirement_id,
+                story_data=story_data
+            )
+            
+            if result.get("success"):
+                print(f"storyboard数据已保存到数据库，story_id: {story_id}")
+                return True
+            else:
+                print(f"保存storyboard数据失败: {result.get('error', '未知错误')}")
+                return False
+                
+        except Exception as e:
+            print(f"保存storyboard数据时出错: {e}")
+            return False
     
     def _convert_level_details_to_storyboards(self, level_details: Dict[str, Any], final_state: Dict[str, Any]) -> Dict[str, Any]:
         """将level_details转换为前端期望的storyboards格式"""

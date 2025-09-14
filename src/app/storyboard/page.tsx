@@ -17,6 +17,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import CustomStoryboardNode from '@/components/CustomStoryboardNode'
 
+// 将nodeTypes移到组件外部，避免重新创建
 const nodeTypes: NodeTypes = {
   storyboard: CustomStoryboardNode,
 }

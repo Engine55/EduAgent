@@ -159,6 +159,66 @@ class DatabaseClient:
                 'error': str(e)
             }
     
+    def get_story(self, story_id: str) -> Dict[str, Any]:
+        """获取故事数据"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT data FROM edu_data 
+                        WHERE id = %s AND data_type = 'story'
+                    """, [story_id])
+                    
+                    result = cursor.fetchone()
+                    if result:
+                        return {
+                            'success': True,
+                            'data': result['data']
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'error': 'Story not found'
+                        }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_all_stories(self) -> Dict[str, Any]:
+        """获取所有故事数据"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT id, data, created_at, updated_at 
+                        FROM edu_data 
+                        WHERE data_type = 'story'
+                        ORDER BY updated_at DESC
+                    """)
+                    
+                    results = cursor.fetchall()
+                    stories = []
+                    for row in results:
+                        stories.append({
+                            "id": row['id'],
+                            "data": row['data'],
+                            "created_at": row['created_at'].isoformat() if row['created_at'] else "",
+                            "updated_at": row['updated_at'].isoformat() if row['updated_at'] else ""
+                        })
+                    
+                    return {
+                        'success': True,
+                        'data': stories,
+                        'count': len(stories)
+                    }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def save_storyboard(self, storyboard_id: str, story_id: str, storyboard_data: Dict[str, Any]) -> Dict[str, Any]:
         """保存分镜数据"""
         try:
