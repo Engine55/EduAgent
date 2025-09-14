@@ -47,6 +47,8 @@ interface StoryData {
   story_title: string
   subject?: string
   grade?: string
+  analysis_report?: string  // 添加需求分析报告
+  story_framework?: string  // 添加故事框架
   storyboards: Array<{
     stage_index: number
     stage_name: string
@@ -87,6 +89,35 @@ export default function StoryboardPage() {
     setIsDownloading(true)
     try {
       const zip = new JSZip()
+      
+      // 添加项目概要文件
+      if (storyData.analysis_report || storyData.story_framework) {
+        const projectFolder = zip.folder('项目文档')
+        
+        if (storyData.analysis_report) {
+          const reportContent = `RPG教育游戏需求分析报告\n` +
+            `项目标题：${storyData.story_title}\n` +
+            `学科：${storyData.subject || '未知'} (${storyData.grade || '未知'}年级)\n` +
+            `生成时间：${new Date().toLocaleString()}\n` +
+            `\n${'='.repeat(60)}\n\n` +
+            storyData.analysis_report
+          
+          projectFolder?.file('需求分析报告.txt', reportContent)
+          console.log('✅ 添加需求分析报告.txt')
+        }
+        
+        if (storyData.story_framework) {
+          const frameworkContent = `RPG教育游戏故事框架\n` +
+            `项目标题：${storyData.story_title}\n` +
+            `学科：${storyData.subject || '未知'} (${storyData.grade || '未知'}年级)\n` +
+            `生成时间：${new Date().toLocaleString()}\n` +
+            `\n${'='.repeat(60)}\n\n` +
+            storyData.story_framework
+          
+          projectFolder?.file('故事框架设计.txt', frameworkContent)
+          console.log('✅ 添加故事框架设计.txt')
+        }
+      }
       
       // 为每个分镜创建文件夹和文件
       for (const storyboard of storyData.storyboards) {

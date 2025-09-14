@@ -242,6 +242,8 @@ export default function Home() {
           story_title: rpgFramework?.标题 || storyboardsData.story_title || '未知故事',
           subject: storyboardsData.subject || storyData.subject,
           grade: storyboardsData.grade || storyData.grade,
+          analysis_report: result.data.analysis_report,  // 添加需求分析报告
+          story_framework: result.data.story_framework,  // 添加故事框架
           storyboards: optimizedStoryboards
         }
         

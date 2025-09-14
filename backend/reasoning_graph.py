@@ -343,6 +343,8 @@ class ReasoningGraph:
                 "timestamp": timestamp,
                 "collected_info": self.collected_info,
                 "final_requirements": self.collected_info,  # 为了兼容性
+                "analysis_report": state.get("requirement_analysis_report", ""),  # 添加分析报告
+                "story_framework": state.get("story_framework", ""),  # 添加故事框架
                 "status": "completed"
             }
             

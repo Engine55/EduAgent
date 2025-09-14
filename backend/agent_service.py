@@ -280,6 +280,7 @@ class AgentService:
             story_data = {
                 "requirement_id": requirement_id,
                 "story_framework": story_framework,
+                "analysis_report": final_state.get("requirement_analysis_report", ""),  # 添加分析报告
                 "storyboards_data": storyboards_data,
                 "collected_info": final_state.get("collected_info", {}),
                 "level_details": final_state.get("level_details", {}),
@@ -404,6 +405,8 @@ class AgentService:
                 "story_title": story_title,
                 "subject": collected_info.get("subject", "未知"),
                 "grade": collected_info.get("grade", "未知"),
+                "analysis_report": final_state.get("requirement_analysis_report", ""),  # 添加分析报告
+                "story_framework": final_state.get("story_framework", ""),  # 添加故事框架
                 "storyboards": storyboards
             }
             
