@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: "dall-e-3",
-        prompt: `pixel art RPG style, high resolution game art, ${fullPrompt}`,
+        prompt: `pixel art RPG style, high resolution game art, ${fullPrompt}, no extra people, no background characters, clean composition`,
         n: 1,
         size: "1024x1024",
         quality: "standard",

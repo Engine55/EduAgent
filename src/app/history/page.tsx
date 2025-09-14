@@ -59,6 +59,11 @@ export default function HistoryPage() {
       const result = await response.json()
       
       if (result.success && result.data.storyboards_data) {
+        // 调试：检查数据结构
+        console.log('获取到的完整数据:', result.data)
+        console.log('storyboards_data:', result.data.storyboards_data)
+        console.log('storyboards数组:', result.data.storyboards_data.storyboards)
+        
         // 将数据存储到sessionStorage
         const storyboardPageData = {
           story_id: item.story_id,
@@ -67,6 +72,8 @@ export default function HistoryPage() {
           grade: item.grade,
           storyboards: result.data.storyboards_data.storyboards || []
         }
+        
+        console.log('传递给storyboard页面的数据:', storyboardPageData)
         
         sessionStorage.setItem('generatedStoryboardData', JSON.stringify(storyboardPageData))
         

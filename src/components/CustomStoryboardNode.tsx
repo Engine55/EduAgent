@@ -19,7 +19,11 @@ interface NodeData {
       作用: string
     }
   }
-  dialogue: {
+  dialogue: Array<{
+    NPC?: string
+    主角?: string
+    轮次: number
+  }> | {
     开场对话?: Array<{
       角色: string
       内容: string
@@ -124,6 +128,8 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
         body: JSON.stringify({
           imagePrompt: data.imagePrompt,
           nodeId: data.sceneInfo.分镜编号,
+          characters: data.characters,  // 添加角色信息
+          sceneName: data.sceneName,    // 添加场景名称
         }),
       })
 
@@ -356,7 +362,7 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
             <button 
               className="px-2 py-1 bg-purple-500 text-white text-xs rounded hover:bg-purple-600 transition-colors"
               onClick={() => setShowDialogue(!showDialogue)}
-              disabled={!generatedDialogue && !isGeneratingDialogue}
+              disabled={!generatedDialogue && !isGeneratingDialogue && (!Array.isArray(data.dialogue) || data.dialogue.length === 0)}
             >
               {showDialogue ? '隐藏' : '显示'}对话
             </button>
@@ -372,6 +378,26 @@ const CustomStoryboardNode: React.FC<CustomStoryboardNodeProps> = ({ data }) => 
             ) : generatedDialogue ? (
               <div className="whitespace-pre-line text-gray-700 leading-relaxed select-text cursor-text">
                 {generatedDialogue}
+              </div>
+            ) : Array.isArray(data.dialogue) && data.dialogue.length > 0 ? (
+              <div className="space-y-2">
+                {data.dialogue.map((dialogueItem, index) => (
+                  <div key={index} className="p-2 bg-white rounded border">
+                    <div className="text-xs text-gray-500 mb-1">轮次 {dialogueItem.轮次}</div>
+                    {dialogueItem.NPC && (
+                      <div className="mb-1">
+                        <span className="font-semibold text-blue-600">NPC:</span>
+                        <span className="ml-2 text-gray-700">{dialogueItem.NPC}</span>
+                      </div>
+                    )}
+                    {dialogueItem.主角 && (
+                      <div>
+                        <span className="font-semibold text-green-600">主角:</span>
+                        <span className="ml-2 text-gray-700">{dialogueItem.主角}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : dialogueError ? (
               <div className="text-red-500 text-center py-2">

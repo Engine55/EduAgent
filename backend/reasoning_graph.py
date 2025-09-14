@@ -1568,8 +1568,8 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["characters_status"] = "failed"
             state["level_details"][f"level_{level}"]["characters_error"] = str(e)
         
-        # 现在只有一个关卡，可以安全返回完整状态
-        return state
+        # 只返回level_details更新，避免并发冲突
+        return {"level_details": state["level_details"]}
     
     async def _generate_level_scenes(self, state: ReasoningState, level: int) -> ReasoningState:
         """为指定关卡生成场景视觉和剧本"""
@@ -1609,6 +1609,17 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
             state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
             
+            # 尝试生成并上传图片到Cloudinary
+            try:
+                image_url = await self._generate_and_upload_image(scenes_content, level)
+                if image_url:
+                    state["level_details"][f"level_{level}"]["generated_image_url"] = image_url
+                    print(f"第{level}关卡图片生成并上传成功: {image_url}")
+                else:
+                    print(f"第{level}关卡图片生成失败")
+            except Exception as img_e:
+                print(f"第{level}关卡图片生成异常: {img_e}")
+            
             print(f"第{level}关卡场景剧本生成完成")
             
         except Exception as e:
@@ -1623,8 +1634,8 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["scenes_status"] = "failed"
             state["level_details"][f"level_{level}"]["scenes_error"] = str(e)
         
-        # 现在只有一个关卡，可以安全返回完整状态
-        return state
+        # 只返回level_details更新，避免并发冲突
+        return {"level_details": state["level_details"]}
     
     async def _collect_all_level_results(self, state: ReasoningState) -> ReasoningState:
         """汇聚所有关卡的生成结果"""

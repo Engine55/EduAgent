@@ -212,28 +212,36 @@ export default function Home() {
       if (result.success) {
         console.log('✅ 故事板生成成功:', result.data)
         setStoryboardData(result.data)
-        
+
+        // 根据后端返回的数据结构解析
+        const storyData = result.data.story_data || {}
+        const storyboardsData = result.data.storyboards_data || storyData.storyboards_data || {}
+        const storyboardsList = storyboardsData.storyboards || []
+        const rpgFramework = storyboardsData.rpg_framework || JSON.parse(storyData.story_framework || '{}')
+
         // 添加一条成功消息到对话中
         const successMessage: Message = {
           id: (Date.now()).toString(),
           type: 'ai',
-          content: `🎉 游戏内容生成完成！\n\n✅ RPG故事框架：${result.data.rpg_framework?.标题 || '未知标题'}\n✅ 生成关卡数：${result.data.total_stages}个\n✅ 故事板数：${result.data.successful_storyboards}个\n\n准备跳转到故事板可视化页面...`,
+          content: `🎉 游戏内容生成完成！\n\n✅ RPG故事框架：${rpgFramework?.标题 || storyboardsData.story_title || '未知标题'}\n✅ 生成关卡数：${storyboardsList.length}个\n✅ 故事板数：${storyboardsList.length}个\n\n准备跳转到故事板可视化页面...`,
           timestamp: new Date()
         }
         setMessages(prev => [...prev, successMessage])
 
         // 将数据存储到sessionStorage，然后跳转到故事板页面
         // 优化：只存储图片URL，移除大体积的base64数据
-        const optimizedStoryboards = (result.data.storyboards_list || []).map((storyboard: any) => ({
+        const optimizedStoryboards = storyboardsList.map((storyboard: any) => ({
           ...storyboard,
           // 保留图片URL，移除base64数据以节省空间
-          generated_image_url: storyboard.generated_image_data?.original_url || null,
+          generated_image_url: storyboard.generated_image_data?.original_url || storyboard.generated_image_url || null,
           generated_image_data: undefined // 移除base64数据
         }))
 
         const storyboardPageData = {
           story_id: result.data.requirement_id,
-          story_title: result.data.rpg_framework?.标题 || '未知故事',
+          story_title: rpgFramework?.标题 || storyboardsData.story_title || '未知故事',
+          subject: storyboardsData.subject || storyData.subject,
+          grade: storyboardsData.grade || storyData.grade,
           storyboards: optimizedStoryboards
         }
         

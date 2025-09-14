@@ -95,17 +95,82 @@ export default function StoryboardPage() {
         
         if (!sceneFolder) continue
 
-        // 1. 对话文件
+        // 1. AI生成对话文件 (如果存在)
         if (storyboard.generated_dialogue) {
           const dialogueContent = `场景：${storyboard.stage_name}\n` +
             `学科：${storyData.subject || '未知'} (${storyData.grade || '未知'}年级)\n` +
             `生成时间：${new Date().toLocaleString()}\n` +
             `\n${'='.repeat(50)}\n\n` +
+            `【AI生成对话】\n` +
             storyboard.generated_dialogue
-          sceneFolder.file('对话.txt', dialogueContent)
+          sceneFolder.file('AI生成对话.txt', dialogueContent)
         }
 
-        // 2. 剧本文件
+        // 2. 对话文件
+        console.log(`🔍 DEBUG: 处理场景 ${storyboard.stage_name}`)
+        console.log(`🔍 DEBUG: storyboard.storyboard 存在:`, !!storyboard.storyboard)
+        console.log(`🔍 DEBUG: 人物对话字段:`, storyboard.storyboard?.人物对话)
+        console.log(`🔍 DEBUG: 人物对话类型:`, typeof storyboard.storyboard?.人物对话)
+        console.log(`🔍 DEBUG: 是否为数组:`, Array.isArray(storyboard.storyboard?.人物对话))
+
+        if (storyboard.storyboard.人物对话 && Array.isArray(storyboard.storyboard.人物对话)) {
+          console.log(`✅ DEBUG: 找到对话数据，长度: ${storyboard.storyboard.人物对话.length}`)
+
+          let dialogueContent = `场景：${storyboard.stage_name}\n` +
+            `学科：${storyData.subject || '未知'} (${storyData.grade || '未知'}年级)\n` +
+            `生成时间：${new Date().toLocaleString()}\n` +
+            `\n${'='.repeat(50)}\n\n`
+
+          // 调试：显示原始数据的前几个元素
+          console.log(`🔍 DEBUG: 原始对话数据前3个:`, storyboard.storyboard.人物对话.slice(0, 3))
+
+          // 过滤掉非对话数据，只保留有轮次字段的对话
+          const dialogueTurns = storyboard.storyboard.人物对话.filter(turn =>
+            turn.轮次 && (turn.NPC || turn.主角)
+          )
+
+          console.log(`✅ DEBUG: 过滤后的对话轮次: ${dialogueTurns.length}`)
+          console.log(`🔍 DEBUG: 过滤后的数据:`, dialogueTurns)
+
+          if (dialogueTurns.length === 0) {
+            console.log(`⚠️ DEBUG: 没有有效的对话数据！`)
+            // 添加调试信息到文件
+            dialogueContent += `⚠️ 调试信息：没有找到有效的对话数据\n`
+            dialogueContent += `原始数据结构：${JSON.stringify(storyboard.storyboard.人物对话.slice(0, 2), null, 2)}\n`
+          } else {
+            dialogueTurns.forEach((turn) => {
+              dialogueContent += `【第${turn.轮次}轮对话】\n`
+              if (turn.NPC) {
+                dialogueContent += `NPC：${turn.NPC}\n`
+              }
+              if (turn.主角) {
+                dialogueContent += `主角：${turn.主角}\n`
+              }
+              dialogueContent += '\n'
+            })
+          }
+
+          sceneFolder.file('对话.txt', dialogueContent)
+          console.log(`✅ DEBUG: 对话.txt 文件已添加到ZIP`)
+        } else {
+          console.log(`❌ DEBUG: 对话数据不存在或不是数组`)
+
+          // 创建调试文件显示实际的数据结构
+          const debugContent = `调试信息 - 场景：${storyboard.stage_name}\n` +
+            `${'='.repeat(50)}\n\n` +
+            `storyboard.storyboard 存在: ${!!storyboard.storyboard}\n` +
+            `人物对话字段类型: ${typeof storyboard.storyboard?.人物对话}\n` +
+            `是否为数组: ${Array.isArray(storyboard.storyboard?.人物对话)}\n\n` +
+            `实际数据结构:\n` +
+            `${JSON.stringify(storyboard.storyboard?.人物对话, null, 2)}\n\n` +
+            `完整storyboard结构:\n` +
+            `${JSON.stringify(storyboard.storyboard, null, 2)}`
+
+          sceneFolder.file('调试信息.txt', debugContent)
+          console.log(`❌ DEBUG: 创建了调试信息.txt 文件`)
+        }
+
+        // 3. 剧本文件
         if (storyboard.storyboard.剧本) {
           const scriptContent = `场景：${storyboard.stage_name}\n` +
             `分镜编号：${storyboard.storyboard.分镜基础信息?.分镜编号 || storyboard.stage_id}\n` +
@@ -118,7 +183,7 @@ export default function StoryboardPage() {
           sceneFolder.file('剧本.txt', scriptContent)
         }
 
-        // 3. 角色介绍文件
+        // 4. 角色介绍文件
         if (storyboard.storyboard.人物档案) {
           const charactersContent = `场景：${storyboard.stage_name}\n` +
             `角色介绍\n` +
@@ -137,7 +202,7 @@ export default function StoryboardPage() {
           sceneFolder.file('角色介绍.txt', charactersContent)
         }
 
-        // 4. 图片文件（如果有的话）
+        // 5. 图片文件（如果有的话）
         if (storyboard.generated_image_url) {
           try {
             // 通过Next.js API代理下载图片（绕过CORS限制）
@@ -171,7 +236,7 @@ export default function StoryboardPage() {
           }
         }
 
-        // 5. 背景音乐文件
+        // 6. 背景音乐文件
         if (storyboard.storyboard.图片提示词) {
           try {
             console.log(`🎵 为 ${storyboard.stage_name} 生成背景音乐...`)
