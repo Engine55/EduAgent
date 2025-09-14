@@ -217,7 +217,7 @@ export default function Home() {
         const storyData = result.data.story_data || {}
         const storyboardsData = result.data.storyboards_data || storyData.storyboards_data || {}
         const storyboardsList = storyboardsData.storyboards || []
-        const rpgFramework = storyboardsData.rpg_framework || JSON.parse(storyData.story_framework || '{}')
+        const rpgFramework = storyboardsData.rpg_framework || (storyData.story_framework ? { 标题: '自动生成的RPG故事' } : {})
 
         // 添加一条成功消息到对话中
         const successMessage: Message = {

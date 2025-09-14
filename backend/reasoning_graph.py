@@ -1644,6 +1644,10 @@ class ReasoningGraph:
 
             print("关卡生成结果汇聚完成")
             print(f"教育达成度评估完成，总分：{education_assessment.get('总分', 0)}/100")
+
+            # 在完成所有内容生成后清空 memory
+            self._clear_memory_after_completion()
+            print("已清空对话memory，准备进入下一轮对话")
             
         except Exception as e:
             print(f"汇聚结果失败: {e}")
@@ -1903,6 +1907,31 @@ class ReasoningGraph:
             ],
             "适用场景": f"适用于{grade}学生的{subject}课堂教学或课外学习，建议配合教师指导使用。"
         }
+
+    def _clear_memory_after_completion(self):
+        """在完成所有内容生成后清空memory，为下次对话做准备"""
+        try:
+            if hasattr(self, 'memory') and self.memory:
+                self.memory.chat_memory.clear()
+                print("已清空ConversationSummaryBufferMemory")
+
+            # 重置collected_info为初始状态
+            self.collected_info = {
+                "subject": None,
+                "grade": None,
+                "knowledge_points": None,
+                "teaching_goals": None,
+                "teaching_difficulties": None,
+                "game_style": None,
+                "character_design": None,
+                "world_setting": None,
+                "plot_requirements": None,
+                "interaction_requirements": None
+            }
+            print("已重置collected_info状态")
+
+        except Exception as e:
+            print(f"清空memory时出错: {e}")
 
 
 # 便利函数

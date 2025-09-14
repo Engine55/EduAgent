@@ -100,6 +100,11 @@ class AgentService:
                 self.reasoning_state = reasoning_result["final_state"]
                 # 同步更新collected_info
                 self.collected_info = self.reasoning_state.get("collected_info", {})
+
+                # 检查是否完成了所有内容生成，如果是则重置状态
+                if (reasoning_result["final_state"].get("level_generation_status") == "completed"):
+                    print("检测到内容生成完成，准备重置AgentService状态")
+                    self._reset_after_completion()
             
             # 格式化并返回结果
             return self._format_reasoning_response(reasoning_result, user_input)
@@ -269,7 +274,36 @@ class AgentService:
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
+    def _reset_after_completion(self):
+        """在完成所有内容生成后重置AgentService状态"""
+        try:
+            # 重新生成会话ID
+            old_session_id = self.session_id
+            self.session_id = str(uuid.uuid4())
+
+            # 重置collected_info
+            self.collected_info = {
+                "subject": None,
+                "grade": None,
+                "knowledge_points": None,
+                "teaching_goals": None,
+                "teaching_difficulties": None,
+                "game_style": None,
+                "character_design": None,
+                "world_setting": None,
+                "plot_requirements": None,
+                "interaction_requirements": None
+            }
+
+            # 重置推理状态
+            self.reasoning_state = None
+
+            print(f"AgentService状态已重置: {old_session_id} -> {self.session_id}")
+
+        except Exception as e:
+            print(f"重置AgentService状态时出错: {e}")
+
     def _save_storyboard_to_database(self, requirement_id: str, storyboards_data: dict, story_framework: str, final_state: dict) -> bool:
         """保存storyboard数据到数据库"""
         try:
