@@ -2,6 +2,7 @@ from langchain.chains import ConversationChain
 from langchain.memory import ConversationSummaryBufferMemory  
 from langchain_openai import ChatOpenAI
 from typing import Dict, List, TypedDict, Any
+from typing_extensions import Annotated
 import json
 import hashlib
 from datetime import datetime
@@ -12,6 +13,22 @@ from database_client import db_client
 
 
 # ==================== StateGraph版本的ReasoningGraph ====================
+
+def merge_level_details(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    """合并level_details字典，用于并发状态更新"""
+    if not left:
+        return right or {}
+    if not right:
+        return left or {}
+    
+    # 深度合并level_details
+    merged = left.copy()
+    for key, value in right.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key].update(value)
+        else:
+            merged[key] = value
+    return merged
 
 class ReasoningState(TypedDict):
     """ReasoningGraph的状态定义 - 包含Stage1合并的字段"""
@@ -49,8 +66,8 @@ class ReasoningState(TypedDict):
     story_iteration_count: int
     story_framework_approved: bool
     
-    # 关卡详细内容状态
-    level_details: Dict[str, Any]  # 存储每个关卡的角色对话和场景剧本
+    # 关卡详细内容状态 - 使用Annotated处理并发更新
+    level_details: Annotated[Dict[str, Any], merge_level_details]  # 存储每个关卡的角色对话和场景剧本
     level_generation_status: str   # pending/in_progress/completed/failed
     
     # 最终状态
@@ -1488,15 +1505,19 @@ class ReasoningGraph:
             
             # 获取该关卡的场景数据
             level_scenes = ""
+            print(f"🔍 DEBUG: state keys: {list(state.keys())}")
+            print(f"🔍 DEBUG: level_details keys: {list(state.get('level_details', {}).keys())}")
+            
             if "level_details" in state and f"level_{level}" in state["level_details"]:
                 level_data = state["level_details"][f"level_{level}"]
+                print(f"🔍 DEBUG: level_{level} data keys: {list(level_data.keys())}")
                 if "scenes_script" in level_data:
                     level_scenes = level_data["scenes_script"]
                     print(f"🎬 获取到第{level}关卡的场景数据，长度: {len(level_scenes)}")
                 else:
-                    print(f"⚠️ 第{level}关卡场景数据不存在")
+                    print(f"⚠️ 第{level}关卡scenes_script字段不存在，可用字段: {list(level_data.keys())}")
             else:
-                print(f"⚠️ 第{level}关卡level_details不存在")
+                print(f"⚠️ 第{level}关卡level_details不存在，当前level_details: {state.get('level_details', {})}")
             
             formatted_prompt = character_prompt.format(
                 story_framework=story_framework,
@@ -1527,7 +1548,8 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["characters_status"] = "failed"
             state["level_details"][f"level_{level}"]["characters_error"] = str(e)
         
-        return state
+        # 只返回修改的字段，避免并发冲突
+        return {"level_details": state["level_details"]}
     
     async def _generate_level_scenes(self, state: ReasoningState, level: int) -> ReasoningState:
         """为指定关卡生成场景视觉和剧本"""
@@ -1577,7 +1599,8 @@ class ReasoningGraph:
             state["level_details"][f"level_{level}"]["scenes_status"] = "failed"
             state["level_details"][f"level_{level}"]["scenes_error"] = str(e)
         
-        return state
+        # 只返回修改的字段，避免并发冲突
+        return {"level_details": state["level_details"]}
     
     async def _collect_all_level_results(self, state: ReasoningState) -> ReasoningState:
         """汇聚所有关卡的生成结果"""

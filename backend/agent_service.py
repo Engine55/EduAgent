@@ -354,7 +354,7 @@ class AgentService:
             
             # 构建完整的返回数据
             return {
-                "story_id": session_id,
+                "story_id": self.session_id,
                 "story_title": story_title,
                 "subject": collected_info.get("subject", "未知"),
                 "grade": collected_info.get("grade", "未知"),
