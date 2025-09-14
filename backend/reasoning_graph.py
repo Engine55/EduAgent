@@ -16,7 +16,6 @@ from database_client import db_client
 class ReasoningState(TypedDict):
     """ReasoningGraph的状态定义 - 包含Stage1合并的字段"""
     # 基础会话状态
-    session_id: str
     messages: List[Dict[str, str]]
     user_id: str
     
@@ -49,6 +48,10 @@ class ReasoningState(TypedDict):
     story_review_result: Dict[str, Any]
     story_iteration_count: int
     story_framework_approved: bool
+    
+    # 关卡详细内容状态
+    level_details: Dict[str, Any]  # 存储每个关卡的角色对话和场景剧本
+    level_generation_status: str   # pending/in_progress/completed/failed
     
     # 最终状态
     ready_for_generation: bool
@@ -371,6 +374,20 @@ class ReasoningGraph:
         workflow.add_node("generate_story_framework", self._generate_story_framework)
         workflow.add_node("review_story_framework", self._review_story_framework)
         workflow.add_node("improve_story_framework", self._improve_story_framework)
+        workflow.add_node("distribute_to_levels", self._distribute_to_levels)
+        
+        # 关卡内串行、关卡间并行的生成节点 - 使用循环和partial  
+        from functools import partial
+        for level in range(1, 7):
+            # 场景视觉和剧本生成节点（第一步）
+            workflow.add_node(f"generate_level_{level}_scenes", 
+                             partial(self._generate_level_scenes, level=level))
+            # 角色对话和角色介绍生成节点（第二步，使用场景数据）
+            workflow.add_node(f"generate_level_{level}_characters", 
+                             partial(self._generate_level_characters, level=level))
+        
+        # 最终汇聚节点：等待所有对话完成  
+        workflow.add_node("collect_all_levels", self._collect_all_level_results)
         
         # ==================== 流程路由 ====================
         
@@ -443,11 +460,23 @@ class ReasoningGraph:
             "review_story_framework",
             self._should_continue_story_iteration,
             {
-                "approved": END,  # 审核通过，结束
                 "max_reached": END,  # 达到最大迭代次数，强制结束
-                "continue_iteration": "improve_story_framework"  # 需要改进
+                "continue_iteration": "improve_story_framework",  # 需要改进
+                "approved": "distribute_to_levels"  # 审核通过，分发到所有关卡
             }
         )
+        
+        # 审核通过后：关卡内串行（scene -> dialogue），关卡间并行
+        for level in range(1, 7):
+            # 从distribute_to_levels并行分发到每个关卡的场景生成
+            workflow.add_edge("distribute_to_levels", f"generate_level_{level}_scenes")
+            # 每个关卡的场景完成后生成对话
+            workflow.add_edge(f"generate_level_{level}_scenes", f"generate_level_{level}_characters")
+            # 每个关卡的对话完成后汇聚到collect_all_levels
+            workflow.add_edge(f"generate_level_{level}_characters", "collect_all_levels")
+        
+        # 汇聚完成后结束
+        workflow.add_edge("collect_all_levels", END)
         
         # 改进故事框架后重新审核
         workflow.add_edge("improve_story_framework", "review_story_framework")
@@ -1015,6 +1044,23 @@ class ReasoningGraph:
         
         print(f"✅ 故事框架改进完成 (第{state['story_iteration_count']}次迭代)")
         return state
+
+    async def _distribute_to_levels(self, state: ReasoningState) -> ReasoningState:
+        """分发到所有关卡生成 - 简单的路由节点"""
+        print("🚀 故事框架审核通过，开始并行生成6个关卡...")
+        
+        # 初始化所有关卡的状态字段
+        for level in range(1, 7):
+            level_key = f"level_{level}"
+            if level_key not in state.get("level_details", {}):
+                if "level_details" not in state:
+                    state["level_details"] = {}
+                state["level_details"][level_key] = {
+                    "scenes_status": "pending",
+                    "characters_status": "pending"
+                }
+        
+        return state
     
     # ==================== LLM辅助方法 ====================
     
@@ -1284,7 +1330,6 @@ class ReasoningGraph:
         """初始化推理状态"""
         
         return ReasoningState(
-            session_id=session_id,
             messages=[],
             user_id=user_id,
             
@@ -1330,8 +1375,8 @@ class ReasoningGraph:
         # 初始化状态
         initial_state = self.initialize_reasoning_state(session_id, user_id, collected_info)
         
-        # 运行图
-        thread_config = {"configurable": {"thread_id": session_id}}
+        # 运行图 - 使用固定thread_id避免并发冲突
+        thread_config = {"configurable": {"thread_id": "main_thread"}}
         
         try:
             final_state = await self.graph.ainvoke(initial_state, config=thread_config)
@@ -1383,8 +1428,8 @@ class ReasoningGraph:
                 elif msg.get("role") == "assistant":
                     self.memory.chat_memory.add_ai_message(msg["content"])
             
-            # 运行图
-            thread_config = {"configurable": {"thread_id": reasoning_state.get("session_id", "default")}}
+            # 运行图 - 使用固定thread_id避免并发冲突
+            thread_config = {"configurable": {"thread_id": "main_thread"}}
             
             final_state = await self.graph.ainvoke(reasoning_state, config=thread_config)
             
@@ -1417,6 +1462,187 @@ class ReasoningGraph:
             return "fitness_check"
         else:
             return "unknown"
+
+
+    # ==================== 关卡详细内容生成节点 ====================
+    
+    async def _generate_level_characters(self, state: ReasoningState, level: int) -> ReasoningState:
+        """为指定关卡生成角色对话和角色介绍"""
+        
+        try:
+            print(f"🎭 开始生成第{level}关卡的角色对话...")
+            
+            # 初始化level_details如果不存在
+            if "level_details" not in state:
+                state["level_details"] = {}
+            if f"level_{level}" not in state["level_details"]:
+                state["level_details"][f"level_{level}"] = {}
+            
+            # 获取角色对话生成prompt
+            from prompt_templates import create_prompt_templates
+            templates = create_prompt_templates()
+            character_prompt = templates.get_level_characters_generation_prompt()
+            
+            # 准备prompt参数
+            story_framework = state.get("story_framework", "")
+            
+            # 获取该关卡的场景数据
+            level_scenes = ""
+            if "level_details" in state and f"level_{level}" in state["level_details"]:
+                level_data = state["level_details"][f"level_{level}"]
+                if "scenes_script" in level_data:
+                    level_scenes = level_data["scenes_script"]
+                    print(f"🎬 获取到第{level}关卡的场景数据，长度: {len(level_scenes)}")
+                else:
+                    print(f"⚠️ 第{level}关卡场景数据不存在")
+            else:
+                print(f"⚠️ 第{level}关卡level_details不存在")
+            
+            formatted_prompt = character_prompt.format(
+                story_framework=story_framework,
+                scene_data=level_scenes,  # 传递场景数据
+                level=level
+            )
+            
+            # 调用LLM生成角色对话
+            response = await self.llm.ainvoke([{"role": "user", "content": formatted_prompt}])
+            characters_content = response.content
+            
+            # 保存生成结果
+            state["level_details"][f"level_{level}"]["characters_dialogue"] = characters_content
+            state["level_details"][f"level_{level}"]["characters_status"] = "completed"
+            state["level_details"][f"level_{level}"]["characters_generated_at"] = datetime.now().isoformat()
+            
+            print(f"✅ 第{level}关卡角色对话生成完成")
+            
+        except Exception as e:
+            print(f"❌ 第{level}关卡角色对话生成失败: {e}")
+            
+            # 即使失败也保存错误信息
+            if "level_details" not in state:
+                state["level_details"] = {}
+            if f"level_{level}" not in state["level_details"]:
+                state["level_details"][f"level_{level}"] = {}
+                
+            state["level_details"][f"level_{level}"]["characters_status"] = "failed"
+            state["level_details"][f"level_{level}"]["characters_error"] = str(e)
+        
+        return state
+    
+    async def _generate_level_scenes(self, state: ReasoningState, level: int) -> ReasoningState:
+        """为指定关卡生成场景视觉和剧本"""
+        
+        try:
+            print(f"🎬 开始生成第{level}关卡的场景剧本...")
+            
+            # 初始化level_details如果不存在
+            if "level_details" not in state:
+                state["level_details"] = {}
+            if f"level_{level}" not in state["level_details"]:
+                state["level_details"][f"level_{level}"] = {}
+            
+            # 获取场景剧本生成prompt
+            from prompt_templates import create_prompt_templates
+            templates = create_prompt_templates()
+            scene_prompt = templates.get_level_scenes_generation_prompt()
+            
+            # 准备prompt参数
+            story_framework = state.get("story_framework", "")
+            
+            formatted_prompt = scene_prompt.format(
+                story_framework=story_framework,
+                level=level
+            )
+            
+            # 调用LLM生成场景剧本
+            response = await self.llm.ainvoke([{"role": "user", "content": formatted_prompt}])
+            scenes_content = response.content
+            
+            # 保存生成结果
+            state["level_details"][f"level_{level}"]["scenes_script"] = scenes_content
+            state["level_details"][f"level_{level}"]["scenes_status"] = "completed"
+            state["level_details"][f"level_{level}"]["scenes_generated_at"] = datetime.now().isoformat()
+            
+            print(f"✅ 第{level}关卡场景剧本生成完成")
+            
+        except Exception as e:
+            print(f"❌ 第{level}关卡场景剧本生成失败: {e}")
+            
+            # 即使失败也保存错误信息
+            if "level_details" not in state:
+                state["level_details"] = {}
+            if f"level_{level}" not in state["level_details"]:
+                state["level_details"][f"level_{level}"] = {}
+                
+            state["level_details"][f"level_{level}"]["scenes_status"] = "failed"
+            state["level_details"][f"level_{level}"]["scenes_error"] = str(e)
+        
+        return state
+    
+    async def _collect_all_level_results(self, state: ReasoningState) -> ReasoningState:
+        """汇聚所有关卡的生成结果"""
+        
+        try:
+            print("📋 汇聚所有关卡生成结果...")
+            
+            # 统计完成情况
+            completed_characters = 0
+            completed_scenes = 0
+            failed_tasks = []
+            
+            level_details = state.get("level_details", {})
+            
+            for level in range(1, 7):
+                level_key = f"level_{level}"
+                if level_key in level_details:
+                    level_data = level_details[level_key]
+                    
+                    # 统计角色对话完成情况
+                    if level_data.get("characters_status") == "completed":
+                        completed_characters += 1
+                    elif level_data.get("characters_status") == "failed":
+                        failed_tasks.append(f"第{level}关卡角色对话")
+                    
+                    # 统计场景剧本完成情况
+                    if level_data.get("scenes_status") == "completed":
+                        completed_scenes += 1
+                    elif level_data.get("scenes_status") == "failed":
+                        failed_tasks.append(f"第{level}关卡场景剧本")
+            
+            # 生成汇总报告
+            summary_lines = [
+                "🎉 关卡详细内容生成完成！",
+                f"✅ 角色对话：{completed_characters}/6 个关卡完成",
+                f"✅ 场景剧本：{completed_scenes}/6 个关卡完成"
+            ]
+            
+            if failed_tasks:
+                summary_lines.append(f"❌ 失败任务：{', '.join(failed_tasks)}")
+            
+            summary_message = "\n".join(summary_lines)
+            
+            # 添加汇总消息
+            state["messages"].append({
+                "role": "assistant",
+                "content": summary_message,
+                "type": "level_generation_summary"
+            })
+            
+            # 更新状态
+            state["level_generation_status"] = "completed"
+            
+            print("✅ 关卡生成结果汇聚完成")
+            
+        except Exception as e:
+            print(f"❌ 汇聚结果失败: {e}")
+            state["level_generation_status"] = "failed"
+            state["messages"].append({
+                "role": "assistant",
+                "content": f"❌ 关卡内容生成汇聚失败：{str(e)}",
+                "type": "error"
+            })
+        
+        return state
 
 
 # 便利函数

@@ -166,17 +166,45 @@ class AgentService:
                 analysis_report = last_message.get("analysis_report")  # 提取分析报告
                 story_framework = last_message.get("story_framework")  # 提取故事框架
         
-        # 根据是否准备好生成内容来确定返回格式
-        if ready_for_generation:
+        # 提取关卡生成数据
+        level_details = final_state.get("level_details", {})
+        level_generation_status = final_state.get("level_generation_status", "pending")
+        
+        # 转换level_details为前端期望的storyboards格式
+        storyboards_data = self._convert_level_details_to_storyboards(level_details, final_state)
+        
+        # 根据生成状态确定返回格式
+        if level_generation_status == "completed":
+            # 关卡生成完成
+            return {
+                "response": assistant_message,
+                "ready_for_stage2": True,
+                "stage": "all_levels_complete",
+                "requirement_id": self.session_id,
+                "final_requirements": final_state.get("final_requirements", {}),
+                "collected_info": final_state.get("collected_info", {}),
+                "analysis_report": analysis_report,
+                "story_framework": story_framework,
+                "level_details": level_details,  # 原始关卡数据（调试用）
+                "storyboards_data": storyboards_data,  # 转换后的前端格式数据
+                "level_generation_status": level_generation_status,
+                "action": "all_content_generated",
+                "timestamp": self._get_timestamp()
+            }
+        elif ready_for_generation:
+            # 故事框架完成，准备生成关卡
             return {
                 "response": assistant_message,
                 "ready_for_stage2": True,
                 "stage": "stage1_complete",
-                "requirement_id": final_state.get("session_id"),
+                "requirement_id": self.session_id,
                 "final_requirements": final_state.get("final_requirements", {}),
                 "collected_info": final_state.get("collected_info", {}),
-                "analysis_report": analysis_report,  # 添加分析报告
-                "story_framework": story_framework,  # 添加故事框架
+                "analysis_report": analysis_report,
+                "story_framework": story_framework,
+                "level_details": level_details,  # 原始关卡数据（调试用）
+                "storyboards_data": storyboards_data,  # 转换后的前端格式数据
+                "level_generation_status": level_generation_status,
                 "action": "stage1_completed",
                 "timestamp": self._get_timestamp()
             }
@@ -198,6 +226,9 @@ class AgentService:
                 "collected_info": final_state.get("collected_info", {}),
                 "analysis_report": analysis_report,  # 添加分析报告
                 "story_framework": story_framework,  # 添加故事框架
+                "level_details": level_details,  # 原始关卡数据（调试用）
+                "storyboards_data": storyboards_data,  # 转换后的前端格式数据
+                "level_generation_status": level_generation_status,
                 "action": "continue_conversation",
                 "timestamp": self._get_timestamp()
             }
@@ -230,6 +261,115 @@ class AgentService:
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _convert_level_details_to_storyboards(self, level_details: Dict[str, Any], final_state: Dict[str, Any]) -> Dict[str, Any]:
+        """将level_details转换为前端期望的storyboards格式"""
+        
+        try:
+            import json
+            
+            storyboards = []
+            
+            # 从final_state获取基础信息
+            story_framework = final_state.get("story_framework", "")
+            collected_info = final_state.get("collected_info", {})
+            
+            # 提取故事标题（从story_framework中解析或使用默认）
+            story_title = "RPG教育游戏"  # 可以后续从story_framework解析
+            
+            for level in range(1, 7):
+                level_key = f"level_{level}"
+                if level_key not in level_details:
+                    continue
+                    
+                level_data = level_details[level_key]
+                
+                # 解析场景数据JSON
+                scene_json = {}
+                if "scenes_script" in level_data and level_data["scenes_status"] == "completed":
+                    try:
+                        scenes_content = level_data["scenes_script"]
+                        # 提取JSON部分（去除markdown格式）
+                        if "```json" in scenes_content:
+                            json_start = scenes_content.find("```json") + 7
+                            json_end = scenes_content.find("```", json_start)
+                            if json_end != -1:
+                                json_str = scenes_content[json_start:json_end].strip()
+                                scene_json = json.loads(json_str)
+                    except Exception as e:
+                        print(f"⚠️ 第{level}关卡场景JSON解析失败: {e}")
+                
+                # 解析角色数据JSON
+                character_json = {}
+                if "characters_dialogue" in level_data and level_data["characters_status"] == "completed":
+                    try:
+                        characters_content = level_data["characters_dialogue"]
+                        # 提取JSON部分（去除markdown格式）
+                        if "```json" in characters_content:
+                            json_start = characters_content.find("```json") + 7
+                            json_end = characters_content.find("```", json_start)
+                            if json_end != -1:
+                                json_str = characters_content[json_start:json_end].strip()
+                                character_json = json.loads(json_str)
+                    except Exception as e:
+                        print(f"⚠️ 第{level}关卡角色JSON解析失败: {e}")
+                
+                # 合并scene和character数据
+                storyboard_data = {}
+                
+                # 从scene_json提取数据
+                if scene_json:
+                    storyboard_data["分镜基础信息"] = scene_json.get("分镜基础信息", {})
+                    storyboard_data["图片提示词"] = scene_json.get("图片生成提示词", {})
+                    storyboard_data["剧本"] = scene_json.get("剧本", {})
+                
+                # 从character_json提取数据
+                if character_json:
+                    storyboard_data["人物档案"] = character_json.get("人物档案", {})
+                    storyboard_data["人物对话"] = character_json.get("人物对话", [])
+                
+                # 生成stage_name（从分镜标题提取或使用默认）
+                stage_name = f"关卡{level}"
+                if storyboard_data.get("分镜基础信息", {}).get("分镜标题"):
+                    title = storyboard_data["分镜基础信息"]["分镜标题"]
+                    if "-" in title:
+                        stage_name = title.split("-", 1)[1].strip()
+                
+                # 构建单个storyboard
+                storyboard_item = {
+                    "stage_index": level,
+                    "stage_name": stage_name,
+                    "stage_id": level_key,
+                    "storyboard": storyboard_data,
+                    # 可选字段
+                    "teachingGoal": collected_info.get("teaching_goals", ["未指定"])[0] if collected_info.get("teaching_goals") else "未指定",
+                    "generation_status": {
+                        "storyboard": "success" if (scene_json and character_json) else "failed",
+                        "scene": "success" if scene_json else "failed", 
+                        "dialogue": "success" if character_json else "failed"
+                    }
+                }
+                
+                storyboards.append(storyboard_item)
+            
+            # 构建完整的返回数据
+            return {
+                "story_id": session_id,
+                "story_title": story_title,
+                "subject": collected_info.get("subject", "未知"),
+                "grade": collected_info.get("grade", "未知"),
+                "storyboards": storyboards
+            }
+            
+        except Exception as e:
+            print(f"❌ 转换storyboards数据失败: {e}")
+            return {
+                "story_id": self.session_id,
+                "story_title": "转换失败",
+                "subject": "未知",
+                "grade": "未知", 
+                "storyboards": []
+            }
 
 
 # 便利函数
