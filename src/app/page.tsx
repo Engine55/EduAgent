@@ -9,6 +9,8 @@ interface Message {
   type: 'user' | 'ai'
   content: string
   timestamp: Date
+  analysis_report?: string  // 添加分析报告字段
+  story_framework?: string  // 添加故事框架字段
 }
 
 interface ConversationStage {
@@ -30,6 +32,32 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  // 下载分析报告
+  const handleDownloadReport = (report: string, messageId: string) => {
+    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `RPG教育游戏需求分析报告_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  // 下载故事框架
+  const handleDownloadStoryFramework = (storyFramework: string, messageId: string) => {
+    const blob = new Blob([storyFramework], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `RPG教育游戏故事框架_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   // 初始化对话
   useEffect(() => {
@@ -115,11 +143,16 @@ export default function Home() {
       const result = await response.json()
       
       if (result.success) {
+        console.log('Backend response:', result.data) // 调试信息
+        console.log('Analysis report:', result.data.analysis_report) // 调试信息
+        
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           type: 'ai',
           content: result.data.response || '收到您的消息了！',
-          timestamp: new Date()
+          timestamp: new Date(),
+          analysis_report: result.data.analysis_report,  // 添加分析报告
+          story_framework: result.data.story_framework   // 添加故事框架
         }
 
         setMessages(prev => [...prev, aiMessage])
@@ -269,6 +302,37 @@ export default function Home() {
                 }`}
               >
                 <div className="whitespace-pre-wrap">{message.content}</div>
+                
+                {/* 下载按钮区域 */}
+                {(message.analysis_report || message.story_framework) && (
+                  <div className="mt-3 pt-3 border-t border-gray-300 space-y-2">
+                    {/* 分析报告下载按钮 */}
+                    {message.analysis_report && (
+                      <button
+                        onClick={() => handleDownloadReport(message.analysis_report!, message.id)}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-md transition-colors mr-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        下载需求分析报告
+                      </button>
+                    )}
+                    {/* 故事框架下载按钮 */}
+                    {message.story_framework && (
+                      <button
+                        onClick={() => handleDownloadStoryFramework(message.story_framework!, message.id)}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3a2 2 0 012-2h4a2 2 0 012 2v4m-6 0V6a2 2 0 012-2h4a2 2 0 012 2v1m-6 0h8m-8 0l-.5 5a2 2 0 002 2h5a2 2 0 002-2L16 7m-8 0V5a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                        下载故事框架
+                      </button>
+                    )}
+                  </div>
+                )}
+                
                 <div className={`text-xs mt-2 ${
                   message.type === 'user' ? 'text-blue-200' : 'text-gray-500'
                 }`}>

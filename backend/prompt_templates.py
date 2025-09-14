@@ -339,18 +339,18 @@ class PromptTemplates:
 请以JSON格式返回评估结果：
 {{
     "dimension_scores": {{
-        "基础信息充足性": 85,
-        "教学信息充足性": 75,
-        "游戏设定充足性": 80,
-        "情节设定充足性": 70
+        "基础信息充足性": [0-100分，基于实际评估],
+        "教学信息充足性": [0-100分，基于实际评估],
+        "游戏设定充足性": [0-100分，基于实际评估],
+        "情节设定充足性": [0-100分，基于实际评估]
     }},
     "dimension_analysis": {{
-        "基础信息充足性": "学科和年级信息明确，知识点具体",
-        "教学信息充足性": "教学目标清晰，难点识别准确",
-        "游戏设定充足性": "游戏风格和角色设计完整",
-        "情节设定充足性": "故事情节和互动方式需要更多细节"
+        "基础信息充足性": "[具体分析基础信息的充足程度]",
+        "教学信息充足性": "[具体分析教学信息的充足程度]",
+        "游戏设定充足性": "[具体分析游戏设定的充足程度]",
+        "情节设定充足性": "[具体分析情节设定的充足程度]"
     }},
-    "overall_score": 77.5,
+    "overall_score": [4个维度分数的平均值],
     "insufficient_areas": ["情节发展细节", "互动机制设计"],
     "assessment_summary": "基础信息完整，需要补充情节和互动细节"
 }}
@@ -430,17 +430,17 @@ class PromptTemplates:
 
 请以JSON格式返回检查结果：
 {{
-    "input_fitness": "passed",
-    "fitness_score": 85,
+    "input_fitness": "[passed或rejected，基于评估结果]",
+    "fitness_score": [0-100分，基于实际评估],
     "issues": [
         {{
-            "category": "逻辑合理性",
-            "severity": "high",
-            "description": "具体问题描述",
-            "suggestion": "改进建议"
+            "category": "[问题类别]",
+            "severity": "[high/medium/low]",
+            "description": "[具体问题描述]",
+            "suggestion": "[改进建议]"
         }}
     ],
-    "assessment_summary": "输入内容整体评估"
+    "assessment_summary": "[输入内容的整体评估结论]"
 }}
 
 检查标准：
@@ -477,18 +477,18 @@ class PromptTemplates:
 
     请以JSON格式返回检查结果，请确保所有值都是具体内容：
     {{
-        "overall_fitness": "passed",
+        "overall_fitness": "[passed或concerns，基于评估结果]",
         "concerns": [
             {{
-                "category": "年龄适宜性",
-                "severity": "medium",
-                "description": "具体问题描述",
-                "suggestion": "具体改进建议"
+                "category": "[问题类别]",
+                "severity": "[high/medium/low]",
+                "description": "[具体问题描述]",
+                "suggestion": "[具体改进建议]"
             }}
         ],
-        "positive_aspects": ["积极方面1", "积极方面2"],
-        "fitness_score": 85,
-        "assessment_summary": "整体适宜性总结"
+        "positive_aspects": ["[积极方面1]", "[积极方面2]"],
+        "fitness_score": [0-100分，基于实际评估],
+        "assessment_summary": "[整体适宜性总结]"
     }}
 
     检查标准：
@@ -588,6 +588,258 @@ class PromptTemplates:
         
         return PromptTemplate(
             input_variables=["collected_info", "sufficiency_scores", "average_score", "conversation_context"],
+            template=template
+        )
+    
+    def get_requirement_analysis_prompt(self) -> PromptTemplate:
+        """获取RPG教育游戏需求分析报告模板"""
+        template = """你是专业的RPG教育游戏设计分析师。请基于收集的需求信息生成一份面向RPG故事框架设计的需求分析报告。
+
+收集的需求信息：
+{collected_info}
+
+质量评估结果：
+{sufficiency_scores}
+平均评分：{average_score}/100
+
+请生成专业的RPG教育游戏需求分析报告，重点提取以下RPG设计核心元素：
+
+**【项目基础信息】**
+- 目标学科、年级、知识点
+- 教学目标和学习难点
+
+**【RPG世界观设计要素】**
+- 游戏世界背景和设定
+- 主要角色和NPC设计
+- 世界观与教育内容的结合点
+
+**【RPG故事结构要素】**
+- 主线剧情框架
+- 教育内容如何融入故事线
+- 关键故事节点和教学检查点
+
+**【RPG游戏机制要素】**
+- 核心互动机制
+- 进度系统和奖励机制
+- 教育评估的游戏化实现
+
+**【教育-RPG融合分析】**
+- 教学目标与RPG元素的匹配度
+- 知识点在故事中的分布策略
+- 学习难点的游戏化解决方案
+
+**【第二阶段设计指导】**
+- RPG故事框架的关键设计点
+- 内容拓展的重点方向
+- 技术实现的核心需求
+
+要求：
+- 重点突出RPG设计要素
+- 为故事框架生成提供具体指导
+- 确保所有基础信息完整包含
+- 格式清晰，便于第二阶段系统使用
+
+请以结构化文本报告格式输出。"""
+
+        return PromptTemplate(
+            input_variables=["collected_info", "sufficiency_scores", "average_score"],
+            template=template
+        )
+    
+    def get_story_framework_generation_prompt(self) -> PromptTemplate:
+        """获取RPG故事框架生成模板"""
+        template = """你是专业的RPG教育游戏故事设计师。请基于需求信息生成一个完整的6关卡RPG故事框架。
+
+需求信息：
+{collected_info}
+
+质量评估：
+{sufficiency_scores}
+平均评分：{average_score}/100
+
+请生成一个完整的RPG教育游戏故事框架，必须包含以下内容：
+
+## 【故事主线设计】
+请设计一个引人入胜的主线故事，包含：
+- **主角背景**：主角的身份、动机、特殊能力
+- **世界观设定**：游戏世界的背景、规则、特色
+- **核心冲突**：主要矛盾和挑战（与教学目标相关）
+- **故事目标**：主角的终极目标和成长轨迹
+- **主线剧情**：完整的故事发展脉络（起承转合）
+
+## 【6关卡详细设计】
+为每个关卡设计详细内容：
+
+**关卡1：[关卡名称]**
+- 剧情描述：具体的故事情节和场景
+- 教学融入：如何自然融入知识点"{knowledge_points}"
+- 考核设计：主要考核点和评估方式
+- 互动方式：游戏化的学习互动
+- 主线衔接：与总体故事的关系
+
+**关卡2-6：[依此类推]**
+[为每个关卡提供同样详细的设计]
+
+## 【连贯性保证】
+- **情节衔接**：各关卡间的逻辑过渡
+- **角色发展**：主角在各关卡的成长变化
+- **知识递进**：知识点的循序渐进安排
+- **奖励系统**：贯穿始终的激励机制
+
+## 【教育游戏化设计】
+- **学中玩**：如何让学习过程充满趣味
+- **情景代入**：让学生沉浸在故事世界中
+- **成就感**：通过游戏机制增强学习成就感
+
+要求：
+1. 故事必须符合"{grade}"学生的认知水平和兴趣
+2. 知识点融入要自然，避免生硬的"做题"感觉
+3. 每个关卡都要有明确的教学目标和考核点
+4. 故事情节要连贯流畅，吸引学生持续参与
+5. 符合"{game_style}"风格和"{world_setting}"设定
+6. 主角可以是"{character_design}"类型
+
+请以结构化格式输出完整的故事框架设计。"""
+
+        return PromptTemplate(
+            input_variables=["collected_info", "sufficiency_scores", "average_score", "knowledge_points", "grade", "game_style", "world_setting", "character_design", "analysis_report"],
+            template=template
+        )
+
+    def get_story_review_prompt(self) -> PromptTemplate:
+        """获取故事框架审核评分模板"""
+        template = """你是专业的教育游戏质量评估专家。请对以下RPG故事框架进行全面评估打分。
+
+原始需求：
+{collected_info}
+
+生成的故事框架：
+{story_framework}
+
+请从以下5个维度进行评分（每项0-100分）：
+
+## 【评分维度】
+
+**1. 主线明确性评分 (0-100分)**
+评估标准：
+- 故事目标是否清晰明确
+- 主角动机是否合理充分
+- 核心冲突设置是否有吸引力
+- 教学目标与故事融合度
+- 整体故事弧线是否完整
+
+**2. 内容一致性评分 (0-100分)**
+评估标准：
+- 与用户需求的匹配程度
+- 学科、年级、知识点的准确对应
+- 游戏风格、角色、世界观的一致性
+- 教学难点的合理体现
+- 互动需求的准确实现
+
+**3. 剧情连贯性评分 (0-100分)**
+评估标准：
+- 6个关卡间的逻辑衔接
+- 故事情节发展的流畅性
+- 角色成长轨迹的合理性
+- 情节过渡的自然性
+- 整体叙事的完整性
+
+**4. 教育融合度评分 (0-100分)**
+评估标准：
+- 知识点融入的自然程度
+- 考核方式的创新性和合理性
+- 互动设计与教学目标的匹配
+- 避免生硬"做题"的程度
+- 教学难点的有效解决方案
+
+**5. 吸引力评估评分 (0-100分)**
+评估标准：
+- 故事的趣味性和吸引力
+- 游戏化设计的丰富程度
+- 沉浸感体验的营造
+- "玩中学"理念的体现
+- 对目标年龄段的适宜性
+
+## 【评分要求】
+- 每个维度给出具体分数和详细理由
+- 指出具体的优点和不足
+- 提供针对性的改进建议
+- 总分为5个维度的平均分
+
+## 【通过标准】
+- 各单项维度≥75分
+- 总分≥80分
+- 如未达标，需重新生成
+
+请以JSON格式返回评分结果：
+{{
+    "主线明确性": {{
+        "分数": [根据实际评估给出0-100的分数],
+        "评价": "[详细分析该维度的表现]",
+        "改进建议": "[针对性的改进建议]"
+    }},
+    "内容一致性": {{
+        "分数": [根据实际评估给出0-100的分数],
+        "评价": "[详细分析该维度的表现]",
+        "改进建议": "[针对性的改进建议]"
+    }},
+    "剧情连贯性": {{
+        "分数": [根据实际评估给出0-100的分数],
+        "评价": "[详细分析该维度的表现]", 
+        "改进建议": "[针对性的改进建议]"
+    }},
+    "教育融合度": {{
+        "分数": [根据实际评估给出0-100的分数],
+        "评价": "[详细分析该维度的表现]",
+        "改进建议": "[针对性的改进建议]"
+    }},
+    "吸引力评估": {{
+        "分数": [根据实际评估给出0-100的分数],
+        "评价": "[详细分析该维度的表现]",
+        "改进建议": "[针对性的改进建议]"
+    }},
+    "总分": [5个维度分数的平均值],
+    "整体评价": "[综合评价故事框架的整体质量]",
+    "是否通过": [true/false，基于通过标准判断],
+    "重点改进方向": ["[具体改进点1]", "[具体改进点2]"]
+}}
+
+重要提醒：请根据故事框架的实际质量进行客观评分，不要使用示例中的数字！"""
+
+        return PromptTemplate(
+            input_variables=["collected_info", "story_framework"],
+            template=template
+        )
+
+    def get_story_improvement_prompt(self) -> PromptTemplate:
+        """获取故事改进指导模板"""
+        template = """基于专家评审反馈，请改进RPG故事框架设计。
+
+原始需求：
+{collected_info}
+
+当前故事框架：
+{current_framework}
+
+评审反馈：
+{review_feedback}
+
+重点改进方向：
+{improvement_focus}
+
+请根据评审意见，重新设计故事框架，重点改进以下方面：
+{specific_improvements}
+
+改进要求：
+1. 保持已有的优点和高分部分
+2. 针对性解决评分低的问题
+3. 确保改进后的设计更加优秀
+4. 维持整体故事的完整性和吸引力
+
+请输出改进后的完整故事框架。"""
+
+        return PromptTemplate(
+            input_variables=["collected_info", "current_framework", "review_feedback", "improvement_focus", "specific_improvements"],
             template=template
         )
 

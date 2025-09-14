@@ -44,6 +44,12 @@ class ReasoningState(TypedDict):
     fitness_concerns: List[Dict[str, str]]
     fitness_passed: bool
     
+    # 故事框架状态
+    story_framework: str
+    story_review_result: Dict[str, Any]
+    story_iteration_count: int
+    story_framework_approved: bool
+    
     # 最终状态
     ready_for_generation: bool
     final_requirements: Dict[str, Any]
@@ -361,6 +367,11 @@ class ReasoningGraph:
         workflow.add_node("generate_negotiate_response", self._generate_negotiate_response)
         workflow.add_node("generate_finish_response", self._generate_finish_response)
         
+        # 故事框架生成节点
+        workflow.add_node("generate_story_framework", self._generate_story_framework)
+        workflow.add_node("review_story_framework", self._review_story_framework)
+        workflow.add_node("improve_story_framework", self._improve_story_framework)
+        
         # ==================== 流程路由 ====================
         
         # 设置入口点
@@ -421,8 +432,25 @@ class ReasoningGraph:
         # 有适宜性问题时，生成协商回复后结束（等待用户回应）
         workflow.add_edge("generate_negotiate_response", END)
         
-        # 所有检查通过，生成完成回复后结束
-        workflow.add_edge("generate_finish_response", END)
+        # 所有检查通过，生成完成回复后进入故事框架生成
+        workflow.add_edge("generate_finish_response", "generate_story_framework")
+        
+        # 故事框架生成后进行审核
+        workflow.add_edge("generate_story_framework", "review_story_framework")
+        
+        # 故事框架审核后的条件路由
+        workflow.add_conditional_edges(
+            "review_story_framework",
+            self._should_continue_story_iteration,
+            {
+                "approved": END,  # 审核通过，结束
+                "max_reached": END,  # 达到最大迭代次数，强制结束
+                "continue_iteration": "improve_story_framework"  # 需要改进
+            }
+        )
+        
+        # 改进故事框架后重新审核
+        workflow.add_edge("improve_story_framework", "review_story_framework")
         
         # 编译图
         return workflow.compile()
@@ -455,6 +483,18 @@ class ReasoningGraph:
             return "proceed"
         else:
             return "reject"
+    
+    def _should_continue_story_iteration(self, state: ReasoningState) -> str:
+        """判断是否需要继续故事框架迭代"""
+        max_iterations = 3  # 最大迭代次数
+        
+        if state["story_framework_approved"]:
+            return "approved"
+        elif state["story_iteration_count"] >= max_iterations:
+            print(f"⚠️ 已达最大迭代次数({max_iterations})，强制通过")
+            return "max_reached"
+        else:
+            return "continue_iteration"
     
     # ==================== 新增节点函数 ====================
     
@@ -514,6 +554,150 @@ class ReasoningGraph:
         message_parts.append("\n\n🎯 请提供符合教育规范、逻辑合理且适合学生年龄的游戏设计需求。我将很高兴为您设计一个优秀的教育游戏！")
         
         return "".join(message_parts)
+
+    async def _generate_requirement_analysis_report(self, collected_info: Dict[str, Any], 
+                                                  sufficiency_scores: Dict[str, float]) -> str:
+        """使用LLM生成RPG需求分析报告"""
+        
+        # 计算平均分
+        average_score = sum(sufficiency_scores.values()) / len(sufficiency_scores) if sufficiency_scores else 75
+        
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_requirement_analysis_prompt()
+        analysis_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            sufficiency_scores=sufficiency_scores,
+            average_score=average_score
+        )
+
+        try:
+            report = await self.llm.apredict(analysis_prompt)
+            return report.strip()
+        except Exception as e:
+            print(f"❌ 生成需求分析报告失败: {e}")
+            # 返回基础报告
+            return f"""RPG教育游戏需求分析报告
+
+【项目基础信息】
+学科: {collected_info.get('subject', '未指定')}
+年级: {collected_info.get('grade', '未指定')} 
+知识点: {collected_info.get('knowledge_points', '未指定')}
+
+【游戏设计要素】
+游戏风格: {collected_info.get('game_style', '未指定')}
+角色设计: {collected_info.get('character_design', '未指定')}
+世界背景: {collected_info.get('world_setting', '未指定')}
+
+报告生成过程中出现错误，请联系技术支持。"""
+
+    async def _llm_generate_story_framework(self, collected_info: Dict[str, Any], 
+                                          sufficiency_scores: Dict[str, float],
+                                          analysis_report: str = "") -> str:
+        """使用LLM生成RPG故事框架"""
+        
+        # 计算平均分
+        average_score = sum(sufficiency_scores.values()) / len(sufficiency_scores) if sufficiency_scores else 75
+        
+        # 提取关键信息用于模板
+        knowledge_points = collected_info.get('knowledge_points', [])
+        knowledge_points_str = ', '.join(knowledge_points) if isinstance(knowledge_points, list) else str(knowledge_points)
+        
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_story_framework_generation_prompt()
+        framework_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            sufficiency_scores=sufficiency_scores,
+            average_score=average_score,
+            knowledge_points=knowledge_points_str,
+            grade=collected_info.get('grade', '未指定'),
+            game_style=collected_info.get('game_style', '未指定'),
+            world_setting=collected_info.get('world_setting', '未指定'),
+            character_design=collected_info.get('character_design', '未指定')
+        )
+
+        try:
+            framework = await self.llm.apredict(framework_prompt)
+            return framework.strip()
+        except Exception as e:
+            print(f"❌ 生成故事框架失败: {e}")
+            return f"""RPG故事框架生成失败
+            
+【基础信息】
+学科: {collected_info.get('subject', '未指定')}
+年级: {collected_info.get('grade', '未指定')}
+知识点: {knowledge_points_str}
+
+【错误信息】
+故事框架生成过程中出现错误，请联系技术支持。
+错误详情: {str(e)}"""
+
+    async def _llm_review_story_framework(self, collected_info: Dict[str, Any], 
+                                        story_framework: str) -> Dict[str, Any]:
+        """使用LLM审核故事框架"""
+        
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_story_review_prompt()
+        review_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            story_framework=story_framework
+        )
+
+        try:
+            response = await self.llm.apredict(review_prompt)
+            json_content = self._extract_json_from_markdown(response.strip())
+            result = json.loads(json_content)
+            return result
+        except Exception as e:
+            print(f"❌ 故事框架审核失败: {e}")
+            # 返回默认不通过的结果
+            return {
+                "主线明确性": {
+                    "分数": 60,
+                    "评价": "审核过程中出现错误",
+                    "改进建议": "请重新生成故事框架"
+                },
+                "内容一致性": {"分数": 60, "评价": "审核错误", "改进建议": "重新生成"},
+                "剧情连贯性": {"分数": 60, "评价": "审核错误", "改进建议": "重新生成"},
+                "教育融合度": {"分数": 60, "评价": "审核错误", "改进建议": "重新生成"},
+                "吸引力评估": {"分数": 60, "评价": "审核错误", "改进建议": "重新生成"},
+                "总分": 60.0,
+                "整体评价": f"审核过程中出现错误: {str(e)}",
+                "是否通过": False,
+                "重点改进方向": ["修复系统错误", "重新生成框架"]
+            }
+
+    async def _llm_improve_story_framework(self, collected_info: Dict[str, Any],
+                                         current_framework: str,
+                                         review_feedback: Dict[str, Any]) -> str:
+        """使用LLM改进故事框架"""
+        
+        # 构建改进指导
+        improvement_focus = review_feedback.get("重点改进方向", [])
+        improvement_focus_str = ', '.join(improvement_focus)
+        
+        specific_improvements = []
+        for dimension, details in review_feedback.items():
+            if isinstance(details, dict) and details.get("分数", 100) < 75:
+                specific_improvements.append(f"- {dimension}: {details.get('改进建议', '需要改进')}")
+        
+        specific_improvements_str = '\n'.join(specific_improvements) if specific_improvements else "整体优化故事设计"
+        
+        # 使用PromptTemplate
+        prompt_template = self.prompts.get_story_improvement_prompt()
+        improvement_prompt = prompt_template.format(
+            collected_info=self._format_collected_info_for_assessment(collected_info),
+            current_framework=current_framework,
+            review_feedback=str(review_feedback),
+            improvement_focus=improvement_focus_str,
+            specific_improvements=specific_improvements_str
+        )
+
+        try:
+            improved_framework = await self.llm.apredict(improvement_prompt)
+            return improved_framework.strip()
+        except Exception as e:
+            print(f"❌ 改进故事框架失败: {e}")
+            return current_framework  # 返回原框架
 
     async def _extract_and_update_info(self, state: ReasoningState) -> ReasoningState:
         """提取并更新用户输入的信息"""
@@ -720,7 +904,7 @@ class ReasoningGraph:
         return state
         
     async def _generate_finish_response(self, state: ReasoningState) -> ReasoningState:
-        """生成最终完成回复"""
+        """生成最终完成回复并启动故事框架生成"""
         print("🎉 生成最终完成回复...")
         
         # 生成最终确认回复
@@ -730,17 +914,106 @@ class ReasoningGraph:
             conversation_context=self._build_conversation_context(state["messages"])
         )
         
-        # 标记为ready_for_generation
-        state["ready_for_generation"] = True
-        state["final_requirements"] = state["collected_info"].copy()
+        # 生成需求分析报告
+        analysis_report = await self._generate_requirement_analysis_report(
+            state["collected_info"], 
+            state["sufficiency_score"]
+        )
         
         # 更新状态
         state["messages"].append({
             "role": "assistant",
             "content": final_response,
-            "type": "completion_confirmation"
+            "type": "completion_confirmation",
+            "analysis_report": analysis_report  # 在消息中也包含报告
         })
         
+        # 标记为ready_for_generation，但还需要生成故事框架
+        state["final_requirements"] = state["collected_info"].copy()
+        state["requirement_analysis_report"] = analysis_report
+        
+        return state
+
+    async def _generate_story_framework(self, state: ReasoningState) -> ReasoningState:
+        """生成RPG故事框架"""
+        print("📚 生成RPG故事框架...")
+        
+        # 生成故事框架
+        story_framework = await self._llm_generate_story_framework(
+            state["collected_info"],
+            state["sufficiency_score"]
+        )
+        
+        # 更新状态
+        state["story_framework"] = story_framework
+        state["story_iteration_count"] = state.get("story_iteration_count", 0) + 1
+        
+        print(f"✅ 故事框架生成完成 (第{state['story_iteration_count']}次)")
+        return state
+
+    async def _review_story_framework(self, state: ReasoningState) -> ReasoningState:
+        """审核故事框架"""
+        print("🔍 审核故事框架质量...")
+        
+        # 审核故事框架
+        review_result = await self._llm_review_story_framework(
+            state["collected_info"],
+            state["story_framework"]
+        )
+        
+        # 更新状态
+        state["story_review_result"] = review_result
+        state["story_framework_approved"] = review_result.get("是否通过", False)
+        
+        # 打印审核结果
+        total_score = review_result.get("总分", 0)
+        print(f"📊 故事框架审核完成:")
+        print(f"  总分: {total_score}/100")
+        
+        dimensions = ["主线明确性", "内容一致性", "剧情连贯性", "教育融合度", "吸引力评估"]
+        for dim in dimensions:
+            if dim in review_result and isinstance(review_result[dim], dict):
+                score = review_result[dim].get("分数", 0)
+                print(f"  {dim}: {score}/100")
+        
+        if state["story_framework_approved"]:
+            print("✅ 故事框架审核通过！")
+            # 标记为ready_for_generation，表示整个Stage1+故事框架生成完成
+            state["ready_for_generation"] = True
+            
+            # 添加故事框架完成消息，包含story_framework用于下载
+            completion_message = f"🎉 RPG故事框架生成完成！\n\n📊 最终评分: {total_score}/100\n✅ 所有维度评分均达标，故事框架已通过审核。\n\n🎮 您现在可以下载完整的故事框架设计文档。"
+            
+            state["messages"].append({
+                "role": "assistant", 
+                "content": completion_message,
+                "type": "story_framework_completion",
+                "story_framework": state["story_framework"]  # 添加故事框架用于下载
+            })
+        else:
+            print("❌ 故事框架需要改进")
+            improvement_areas = review_result.get("重点改进方向", [])
+            for area in improvement_areas:
+                print(f"  - {area}")
+        
+        return state
+
+    async def _improve_story_framework(self, state: ReasoningState) -> ReasoningState:
+        """改进故事框架"""
+        print("🔧 改进故事框架...")
+        
+        # 改进故事框架
+        improved_framework = await self._llm_improve_story_framework(
+            state["collected_info"],
+            state["story_framework"],
+            state["story_review_result"]
+        )
+        
+        # 更新状态
+        state["story_framework"] = improved_framework
+        state["story_iteration_count"] = state.get("story_iteration_count", 0) + 1
+        
+        print(f"✅ 故事框架改进完成 (第{state['story_iteration_count']}次迭代)")
         return state
     
     # ==================== LLM辅助方法 ====================
@@ -1038,6 +1311,12 @@ class ReasoningGraph:
             fitness_assessment={},
             fitness_concerns=[],
             fitness_passed=False,
+            
+            # 故事框架状态
+            story_framework="",
+            story_review_result={},
+            story_iteration_count=0,
+            story_framework_approved=False,
             
             # 最终状态
             ready_for_generation=False,

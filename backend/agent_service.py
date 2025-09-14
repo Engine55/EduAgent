@@ -157,10 +157,14 @@ class AgentService:
         
         # 获取最后一条助手消息作为回复
         assistant_message = ""
+        analysis_report = None
+        story_framework = None
         if messages:
             last_message = messages[-1]
             if last_message.get("role") == "assistant":
                 assistant_message = last_message.get("content", "")
+                analysis_report = last_message.get("analysis_report")  # 提取分析报告
+                story_framework = last_message.get("story_framework")  # 提取故事框架
         
         # 根据是否准备好生成内容来确定返回格式
         if ready_for_generation:
@@ -171,6 +175,8 @@ class AgentService:
                 "requirement_id": final_state.get("session_id"),
                 "final_requirements": final_state.get("final_requirements", {}),
                 "collected_info": final_state.get("collected_info", {}),
+                "analysis_report": analysis_report,  # 添加分析报告
+                "story_framework": story_framework,  # 添加故事框架
                 "action": "stage1_completed",
                 "timestamp": self._get_timestamp()
             }
@@ -190,6 +196,8 @@ class AgentService:
                 "current_reasoning_stage": stage,
                 "stage_display": stage_display_names.get(stage, stage),
                 "collected_info": final_state.get("collected_info", {}),
+                "analysis_report": analysis_report,  # 添加分析报告
+                "story_framework": story_framework,  # 添加故事框架
                 "action": "continue_conversation",
                 "timestamp": self._get_timestamp()
             }
