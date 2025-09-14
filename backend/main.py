@@ -243,6 +243,39 @@ async def get_story_by_id(request: GetStoryByIdRequest):
             detail=f"获取故事数据失败: {str(e)}"
         )
 
+@app.get("/get_latest_storyboard", response_model=APIResponse)
+async def get_latest_storyboard():
+    """获取数据库中最新的故事板数据"""
+    try:
+        print("获取最新的故事板数据")
+
+        # 从数据库获取最新的故事数据
+        result = db_client.get_latest_story()
+
+        if result.get("success"):
+            story_data = result["data"]
+            print(f"成功获取最新故事数据: {story_data.get('story_id', 'unknown')}")
+
+            return APIResponse(
+                success=True,
+                data=story_data,
+                message="成功获取最新故事板数据"
+            )
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail="未找到任何故事板数据"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"获取最新故事板数据失败: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"获取最新故事板数据失败: {str(e)}"
+        )
+
 @app.get("/health")
 async def health_check():
     """健康检查"""

@@ -349,11 +349,55 @@ export default function StoryboardPage() {
   useEffect(() => {
     async function loadStoryboard() {
       try {
-        // 从sessionStorage获取生成的数据
-        const generatedData = sessionStorage.getItem('generatedStoryboardData')
-        
+        // 首先尝试从sessionStorage获取生成的数据
+        let generatedData = sessionStorage.getItem('generatedStoryboardData')
+
+        // 如果sessionStorage中没有数据，尝试从URL参数获取story_id
         if (!generatedData) {
-          throw new Error('没有找到故事板数据，请先生成游戏内容')
+          const urlParams = new URLSearchParams(window.location.search)
+          const storyId = urlParams.get('story_id')
+
+          if (storyId) {
+            console.log('📊 从服务器加载指定story_id的数据:', storyId)
+            try {
+              const response = await fetch('/api/get_storyboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ story_id: storyId })
+              })
+
+              if (response.ok) {
+                const serverData = await response.json()
+                generatedData = JSON.stringify(serverData)
+                console.log('✅ 成功从服务器加载指定数据')
+              }
+            } catch (fetchError) {
+              console.error('加载指定story_id数据失败:', fetchError)
+            }
+          }
+        }
+
+        // 如果还是没有数据，获取数据库中最新的一条故事板数据
+        if (!generatedData) {
+          console.log('📊 获取数据库中最新的故事板数据')
+          try {
+            const response = await fetch('/api/get_latest_storyboard', {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            })
+
+            if (response.ok) {
+              const latestData = await response.json()
+              generatedData = JSON.stringify(latestData)
+              console.log('✅ 成功获取最新的故事板数据')
+            }
+          } catch (fetchError) {
+            console.error('获取最新数据失败:', fetchError)
+          }
+        }
+
+        if (!generatedData) {
+          throw new Error('没有找到任何故事板数据，请先生成游戏内容')
         }
         
         console.log('📊 使用生成的故事板数据')

@@ -185,7 +185,36 @@ class DatabaseClient:
                 'success': False,
                 'error': str(e)
             }
-    
+
+    def get_latest_story(self) -> Dict[str, Any]:
+        """获取最新的故事数据"""
+        try:
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute("""
+                        SELECT data FROM edu_data
+                        WHERE data_type = 'story'
+                        ORDER BY updated_at DESC, created_at DESC
+                        LIMIT 1
+                    """)
+
+                    result = cursor.fetchone()
+                    if result:
+                        return {
+                            'success': True,
+                            'data': result['data']
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'error': 'No stories found in database'
+                        }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
     def get_all_stories(self) -> Dict[str, Any]:
         """获取所有故事数据"""
         try:
